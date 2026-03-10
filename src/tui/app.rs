@@ -628,9 +628,18 @@ impl App {
             all_time_base_start_week: None,
             all_time_base_models: Vec::new(),
         };
-        // Load pricing engine once (offline to avoid blocking).
+        // Load pricing engine once. Try offline first (fast path using
+        // cached pricing.json). If the cache doesn't exist yet (fresh
+        // install), fall back to a one-time online fetch.
         if !config.no_cost {
             app.pricing = cost::PricingEngine::load(true).ok();
+            if app
+                .pricing
+                .as_ref()
+                .is_some_and(cost::PricingEngine::is_empty)
+            {
+                app.pricing = cost::PricingEngine::load(false).ok();
+            }
         }
         // Compute all-time base from historical records (before the
         // in-memory window). This runs once at startup.

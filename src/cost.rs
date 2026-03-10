@@ -69,14 +69,17 @@ impl PricingEngine {
                         return Ok(engine);
                     }
                 }
-                eprintln!(
-                    "[tokemon] Warning: failed to fetch pricing: {e}; costs will be $0.00"
-                );
+                eprintln!("[tokemon] Warning: failed to fetch pricing: {e}; costs will be $0.00");
                 Ok(Self {
                     models: HashMap::new(),
                 })
             }
         }
+    }
+
+    /// Returns `true` if the engine has any pricing data loaded.
+    pub fn is_empty(&self) -> bool {
+        self.models.is_empty()
     }
 
     /// Apply costs to all entries in-place, caching pricing lookups per model.

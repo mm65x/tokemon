@@ -44,12 +44,12 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 terminal_size = "0.4"
 
 # HTTP (for pricing data fetch)
-reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "native-tls-vendored"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
 
 # TUI (tokemon top)
 ratatui = { version = "0.30", features = ["crossterm"] }
 crossterm = { version = "0.28", features = ["event-stream"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
 futures-lite = "2"
 notify = "7"
 notify-debouncer-mini = "0.5"

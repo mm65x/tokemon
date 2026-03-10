@@ -41,8 +41,10 @@ pub fn run(config: &Config, initial_view: &str, tick_interval: u64) -> anyhow::R
         tick_interval
     };
 
-    // Build a tokio runtime for the async event loop.
-    let runtime = tokio::runtime::Runtime::new()?;
+    // Build a single-threaded tokio runtime for the async event loop.
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
 
     runtime.block_on(async { run_async(config, scope, tick_secs).await })
 }

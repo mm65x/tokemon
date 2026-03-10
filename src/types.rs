@@ -30,28 +30,35 @@ impl Record {
             + self.thinking_tokens
     }
 
-    /// Generate a dedup hash from message_id and request_id.
-    /// Returns None if neither field is present (entry kept unconditionally).
-    /// Uses a hash instead of string keys to avoid allocations.
+    /// Generate a dedup hash from available identity fields.
+    /// Uses message_id + request_id when available, falls back to a
+    /// content-based hash (timestamp + provider + model + tokens) so that
+    /// sources without message_id (Codex, Cline, Cursor, etc.) still dedup.
     #[must_use]
-    pub fn dedup_hash(&self) -> Option<u64> {
+    pub fn dedup_hash(&self) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         match (&self.message_id, &self.request_id) {
             (Some(msg), Some(req)) => {
                 msg.hash(&mut hasher);
                 req.hash(&mut hasher);
-                Some(hasher.finish())
             }
             (Some(msg), None) => {
                 msg.hash(&mut hasher);
                 self.model.as_deref().unwrap_or("unknown").hash(&mut hasher);
                 self.input_tokens.hash(&mut hasher);
                 self.output_tokens.hash(&mut hasher);
-                Some(hasher.finish())
             }
-            _ => None,
+            _ => {
+                // Content-based dedup for records without message_id
+                self.timestamp.hash(&mut hasher);
+                self.provider.hash(&mut hasher);
+                self.model.as_deref().unwrap_or("unknown").hash(&mut hasher);
+                self.input_tokens.hash(&mut hasher);
+                self.output_tokens.hash(&mut hasher);
+            }
         }
+        hasher.finish()
     }
 
     /// Generate a string dedup key for cache storage.
@@ -67,7 +74,17 @@ impl Record {
                     msg, model, self.input_tokens, self.output_tokens
                 ))
             }
-            _ => None,
+            _ => {
+                let model = self.model.as_deref().unwrap_or("unknown");
+                Some(format!(
+                    "{}\0{}\0{}\0{}\0{}",
+                    self.timestamp.timestamp_millis(),
+                    self.provider,
+                    model,
+                    self.input_tokens,
+                    self.output_tokens
+                ))
+            }
         }
     }
 }

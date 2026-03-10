@@ -8,15 +8,8 @@ pub fn deduplicate(entries: Vec<Record>) -> Vec<Record> {
     let mut result = Vec::with_capacity(entries.len());
 
     for entry in entries {
-        match entry.dedup_hash() {
-            Some(hash) => {
-                if seen.insert(hash) {
-                    result.push(entry);
-                }
-            }
-            None => {
-                result.push(entry);
-            }
+        if seen.insert(entry.dedup_hash()) {
+            result.push(entry);
         }
     }
     result

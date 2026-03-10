@@ -426,7 +426,7 @@ fn apply_budget_value(target: &mut Option<f64>, value: &str) -> bool {
         return true;
     }
     if let Ok(v) = value.parse::<f64>() {
-        if v > 0.0 {
+        if v > 0.0 && v.is_finite() {
             *target = Some(v);
         } else {
             *target = None;
@@ -751,35 +751,34 @@ impl App {
             }
             KeyCode::Char('t') => {
                 self.scope = Scope::Today;
-                self.scroll_offset = 0;
-                self.recompute_detail();
+                self.reset_view_state();
                 true
             }
             KeyCode::Char('w') => {
                 self.scope = Scope::Week;
-                self.scroll_offset = 0;
-                self.recompute_detail();
+                self.reset_view_state();
                 true
             }
             KeyCode::Char('m') => {
                 self.scope = Scope::Month;
-                self.scroll_offset = 0;
-                self.recompute_detail();
+                self.reset_view_state();
                 true
             }
             KeyCode::Char('a') => {
                 self.scope = Scope::AllTime;
-                self.scroll_offset = 0;
-                self.recompute_detail();
+                self.reset_view_state();
                 true
             }
             KeyCode::Char('s') => {
                 self.sort_order = self.sort_order.next();
-                self.recompute_detail();
+                self.reset_view_state();
                 true
             }
             KeyCode::Char('g') => {
                 self.group_by = self.group_by.next();
+                self.compute_all_time_base();
+                self.prev_models.clear();
+                self.highlight_map.clear();
                 self.recompute_detail();
                 true
             }
@@ -789,7 +788,8 @@ impl App {
                 true
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                self.scroll_offset = self.scroll_offset.saturating_add(1);
+                let max = self.detail_models.len().saturating_sub(1) as u16;
+                self.scroll_offset = self.scroll_offset.saturating_add(1).min(max);
                 true
             }
             KeyCode::Char('k') | KeyCode::Up => {
@@ -805,10 +805,11 @@ impl App {
                 };
                 if new_scope != self.scope {
                     self.scope = new_scope;
-                    self.scroll_offset = 0;
-                    self.recompute_detail();
+                    self.reset_view_state();
+                    true
+                } else {
+                    false
                 }
-                true
             }
             KeyCode::Right => {
                 let new_scope = match self.scope {
@@ -819,10 +820,11 @@ impl App {
                 };
                 if new_scope != self.scope {
                     self.scope = new_scope;
-                    self.scroll_offset = 0;
-                    self.recompute_detail();
+                    self.reset_view_state();
+                    true
+                } else {
+                    false
                 }
-                true
             }
             _ => false,
         }
@@ -833,8 +835,7 @@ impl App {
             KeyCode::Enter => {
                 self.filter_active = false;
                 self.applied_filter = self.filter_text.clone();
-                self.scroll_offset = 0;
-                self.recompute_detail();
+                self.reset_view_state();
                 true
             }
             KeyCode::Esc => {
@@ -1218,6 +1219,15 @@ impl App {
     }
 
     #[allow(clippy::too_many_lines)]
+    /// Reset view state when scope/filter/sort/group-by changes.
+    /// Clears highlights and scroll, then recomputes the detail table.
+    fn reset_view_state(&mut self) {
+        self.scroll_offset = 0;
+        self.prev_models.clear();
+        self.highlight_map.clear();
+        self.recompute_detail();
+    }
+
     fn recompute_detail(&mut self) {
         let since = self.scope.since();
         let filtered: Vec<Record> = self

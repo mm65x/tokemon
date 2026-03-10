@@ -102,9 +102,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 for mu in &summary.models {
                     let model_total = mu.total_tokens();
                     let sub_cells = cols.build_row(
-                        "",
                         &format!("  {}", display::display_model(&mu.model)),
                         display::infer_api_provider(mu.effective_raw_model()),
+                        "",
                         mu.request_count,
                         mu.input_tokens,
                         mu.output_tokens,

@@ -1,6 +1,8 @@
 mod app;
 pub(crate) mod diff;
 mod event;
+pub(crate) mod settings_state;
+mod sparkline_data;
 mod terminal;
 mod theme;
 mod views;

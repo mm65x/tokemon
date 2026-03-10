@@ -3,7 +3,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::tui::app::{App, SettingField};
+use crate::tui::app::App;
+use crate::tui::settings_state::SettingField;
 use crate::tui::theme;
 
 /// Render the settings overlay as a centered popup.

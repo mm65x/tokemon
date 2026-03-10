@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::{Datelike, NaiveDate};
 
 use crate::display;
-use crate::types::{DailySummary, ModelUsage, Record, SessionSummary};
+use crate::types::{DailySummary, GroupBy, ModelUsage, Record, SessionSummary};
 
 /// Group entries by date, then by model within each date
 pub fn aggregate_daily(entries: &[Record]) -> Vec<DailySummary> {
@@ -144,6 +144,67 @@ where
             .push(entry);
     }
     grouped
+}
+
+/// Aggregate `DailySummary` model usages into a flat `Vec<ModelUsage>`
+/// grouped by the selected `GroupBy` mode. Used by both `recompute_detail`
+/// and `compute_all_time_base`.
+pub fn aggregate_summaries_to_models(
+    summaries: &[DailySummary],
+    group_by: GroupBy,
+) -> Vec<ModelUsage> {
+    let mut model_map: HashMap<(String, String), ModelUsage> = HashMap::new();
+
+    for summary in summaries {
+        for mu in &summary.models {
+            let key = match group_by {
+                GroupBy::Model => (mu.model.clone(), String::new()),
+                GroupBy::ModelClient => (mu.model.clone(), mu.provider.clone()),
+                GroupBy::Client => (String::new(), mu.provider.clone()),
+            };
+            let entry = model_map.entry(key).or_insert_with(|| match group_by {
+                GroupBy::Model => ModelUsage {
+                    model: mu.model.clone(),
+                    raw_model: mu.model.clone(),
+                    provider: String::new(),
+                    ..Default::default()
+                },
+                GroupBy::ModelClient => ModelUsage {
+                    model: mu.model.clone(),
+                    raw_model: mu.raw_model.clone(),
+                    provider: mu.provider.clone(),
+                    ..Default::default()
+                },
+                GroupBy::Client => ModelUsage {
+                    model: String::new(),
+                    raw_model: String::new(),
+                    provider: mu.provider.clone(),
+                    ..Default::default()
+                },
+            });
+            entry.accumulate(mu);
+        }
+    }
+
+    model_map.into_values().collect()
+}
+
+/// Merge two sets of `ModelUsage` by summing values for matching keys.
+pub fn merge_model_usages(base: &[ModelUsage], window: &[ModelUsage]) -> Vec<ModelUsage> {
+    let mut map: HashMap<(String, String), ModelUsage> = HashMap::new();
+
+    for mu in base.iter().chain(window.iter()) {
+        let key = (mu.model.clone(), mu.provider.clone());
+        let entry = map.entry(key).or_insert_with(|| ModelUsage {
+            model: mu.model.clone(),
+            raw_model: mu.raw_model.clone(),
+            provider: mu.provider.clone(),
+            ..Default::default()
+        });
+        entry.accumulate(mu);
+    }
+
+    map.into_values().collect()
 }
 
 fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<DailySummary> {

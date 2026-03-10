@@ -210,3 +210,38 @@ pub struct SessionReport {
     pub total_cost: f64,
     pub total_tokens: u64,
 }
+
+// ── Group-by mode ─────────────────────────────────────────────────────────
+
+/// How to group rows in the detail table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupBy {
+    /// One row per model (aggregated across all clients).
+    Model,
+    /// One row per model+client combination.
+    ModelClient,
+    /// One row per client (aggregated across all models).
+    Client,
+}
+
+impl GroupBy {
+    /// Cycle to the next group-by mode.
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Model => Self::ModelClient,
+            Self::ModelClient => Self::Client,
+            Self::Client => Self::Model,
+        }
+    }
+
+    /// Short label for display.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::ModelClient => "model+client",
+            Self::Client => "client",
+        }
+    }
+}

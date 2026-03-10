@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use crate::timestamp;
 use chrono::{Datelike, Duration, NaiveDate, Timelike, Utc};
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -44,13 +45,10 @@ impl Scope {
     /// Return the start date for this scope.
     #[must_use]
     pub fn since(self) -> NaiveDate {
-        let today = Utc::now().date_naive();
         match self {
-            Self::Today => today,
-            Self::Week => {
-                today - chrono::Duration::days(i64::from(today.weekday().num_days_from_monday()))
-            }
-            Self::Month => NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today),
+            Self::Today => timestamp::start_of_today(),
+            Self::Week => timestamp::start_of_week(),
+            Self::Month => timestamp::start_of_month(),
             Self::AllTime => NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         }
     }

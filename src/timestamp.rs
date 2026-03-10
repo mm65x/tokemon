@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 
 /// Parse a timestamp string, trying multiple formats:
 /// 1. RFC 3339 (e.g., "2026-02-20T10:00:00.000Z")
@@ -34,6 +34,28 @@ pub fn parse_timestamp_numeric(n: i64) -> Option<DateTime<Utc>> {
 /// Parse a millisecond timestamp directly.
 pub fn parse_timestamp_millis(ms: i64) -> Option<DateTime<Utc>> {
     DateTime::from_timestamp_millis(ms)
+}
+
+// ── Period start-date helpers ─────────────────────────────────────────────
+
+/// Return today's date (UTC).
+#[must_use]
+pub fn start_of_today() -> NaiveDate {
+    Utc::now().date_naive()
+}
+
+/// Return the Monday of the current ISO week (UTC).
+#[must_use]
+pub fn start_of_week() -> NaiveDate {
+    let today = Utc::now().date_naive();
+    today - chrono::Duration::days(i64::from(today.weekday().num_days_from_monday()))
+}
+
+/// Return the first day of the current month (UTC).
+#[must_use]
+pub fn start_of_month() -> NaiveDate {
+    let today = Utc::now().date_naive();
+    NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today)
 }
 
 /// Extract a session ID from a file path (stem without extension).

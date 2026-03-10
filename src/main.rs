@@ -11,7 +11,7 @@
     clippy::doc_markdown
 )]
 
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{NaiveDate, Utc};
 use clap::Parser;
 
 mod cache;
@@ -108,15 +108,10 @@ fn resolve_providers<'a>(cli: &'a Cli, config: &'a Config) -> &'a [String] {
 /// Compute the start date for a given frequency.
 #[must_use]
 fn frequency_since(freq: Frequency) -> NaiveDate {
-    let today = Utc::now().date_naive();
     match freq {
-        Frequency::Daily => today,
-        Frequency::Weekly => {
-            today - chrono::Duration::days(i64::from(today.weekday().num_days_from_monday()))
-        }
-        Frequency::Monthly => {
-            NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today)
-        }
+        Frequency::Daily => timestamp::start_of_today(),
+        Frequency::Weekly => timestamp::start_of_week(),
+        Frequency::Monthly => timestamp::start_of_month(),
     }
 }
 
@@ -173,7 +168,7 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         Frequency::Weekly => "weekly",
         Frequency::Monthly => "monthly",
     };
-    let mut entries = load_and_price(cli, config, false, cli.since, cli.until)?;
+    let entries = load_and_price(cli, config, false, cli.since, cli.until)?;
 
     if entries.is_empty() {
         let empty_report = Report {
@@ -202,15 +197,12 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    entries = rollup::filter_by_date(entries, cli.since, cli.until);
-
-    let mut providers_found: Vec<String> = entries
+    let providers_found: Vec<String> = entries
         .iter()
         .map(|e| e.provider.to_string())
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
-    providers_found.sort_unstable();
 
     let mut summaries = match freq {
         Frequency::Weekly => rollup::aggregate_weekly(&entries),
@@ -329,7 +321,6 @@ fn cmd_sessions(cli: &Cli, config: &Config, top: usize) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let entries = rollup::filter_by_date(entries, cli.since, cli.until);
     let mut sessions = rollup::aggregate_by_session(&entries);
     sessions.truncate(top);
 

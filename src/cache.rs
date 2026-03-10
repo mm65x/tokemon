@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate};
 use rusqlite::{params, types::Value, Connection, Row};
 
 use std::borrow::Cow;
@@ -156,9 +156,9 @@ impl Cache {
     /// Get all cached (file, mtime) pairs in one query for bulk staleness checking.
     pub fn cached_file_mtimes(&self) -> anyhow::Result<std::collections::HashMap<String, i64>> {
         let mut map = std::collections::HashMap::new();
-        let mut stmt = self
-            .conn
-            .prepare("SELECT DISTINCT source_file, source_mtime FROM usage_entries")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT source_file, MAX(source_mtime) FROM usage_entries GROUP BY source_file",
+        )?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
         })?;
@@ -443,7 +443,13 @@ impl Cache {
         let ts_str: String = row.get(1)?;
         let timestamp = DateTime::parse_from_rfc3339(&ts_str)
             .map(|dt| dt.to_utc())
-            .unwrap_or_else(|_| Utc::now());
+            .map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Text,
+                    Box::new(e),
+                )
+            })?;
 
         let provider: String = row.get(0)?;
         Ok(Record {

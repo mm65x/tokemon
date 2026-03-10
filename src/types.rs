@@ -141,19 +141,25 @@ pub struct DailySummary {
     pub models: Vec<ModelUsage>,
     pub total_input: u64,
     pub total_output: u64,
-    pub total_cache: u64,
     pub total_thinking: u64,
     pub total_cost: f64,
     pub total_requests: u64,
 }
 
 impl DailySummary {
+    #[must_use]
     pub fn total_cache_creation(&self) -> u64 {
         self.models.iter().map(|m| m.cache_creation_tokens).sum()
     }
 
+    #[must_use]
     pub fn total_cache_read(&self) -> u64 {
         self.models.iter().map(|m| m.cache_read_tokens).sum()
+    }
+
+    #[must_use]
+    pub fn total_cache(&self) -> u64 {
+        self.total_cache_creation() + self.total_cache_read()
     }
 }
 

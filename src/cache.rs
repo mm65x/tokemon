@@ -394,35 +394,30 @@ impl Cache {
 
     /// Mark entries as preserved when their source files no longer exist on disk.
     /// `discovered_files` is the set of currently-existing source file paths.
-    pub fn mark_preserved(&self, discovered_files: &std::collections::HashSet<String>) {
+    pub fn mark_preserved(
+        &self,
+        discovered_files: &std::collections::HashSet<String>,
+    ) -> anyhow::Result<()> {
         if discovered_files.is_empty() {
-            return;
+            return Ok(());
         }
 
         // Get all distinct source files in the cache
-        let Ok(mut stmt) = self
+        let mut stmt = self
             .conn
-            .prepare("SELECT DISTINCT source_file FROM usage_entries WHERE preserved = 0")
-        else {
-            return;
-        };
-        let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
-            return;
-        };
+            .prepare("SELECT DISTINCT source_file FROM usage_entries WHERE preserved = 0")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
         let cached_files: Vec<String> = rows.flatten().collect();
         for file in &cached_files {
             if !discovered_files.contains(file) {
-                if let Err(e) = self.conn.execute(
+                self.conn.execute(
                     "UPDATE usage_entries SET preserved = 1 WHERE source_file = ?1 AND preserved = 0",
                     params![file],
-                ) {
-                    eprintln!(
-                        "[tokemon] Warning: failed to preserve entries for {file}: {e}"
-                    );
-                }
+                )?;
             }
         }
+        Ok(())
     }
 
     /// Delete preserved entries with timestamps before the given date.
@@ -595,7 +590,7 @@ mod tests {
         // Only file_a still exists on disk
         let discovered: HashSet<String> = ["/data/file_a.jsonl".to_string()].into_iter().collect();
 
-        cache.mark_preserved(&discovered);
+        cache.mark_preserved(&discovered).unwrap();
 
         // file_b's entries should be preserved=1
         let preserved_count: i64 = cache
@@ -633,7 +628,7 @@ mod tests {
             .unwrap();
 
         // Empty discovered set should not mark anything
-        cache.mark_preserved(&HashSet::new());
+        cache.mark_preserved(&HashSet::new()).unwrap();
 
         let preserved_count: i64 = cache
             .conn

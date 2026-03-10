@@ -208,21 +208,20 @@ impl PricingEngine {
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .map_err(|e| TokemonError::PricingFetch(e.to_string()))?;
+            .map_err(|e| TokemonError::Pricing(e.to_string()))?;
         let resp = client
             .get(PRICING_URL)
             .send()
-            .map_err(|e| TokemonError::PricingFetch(e.to_string()))?;
+            .map_err(|e| TokemonError::Pricing(e.to_string()))?;
         let text = resp
             .text()
-            .map_err(|e| TokemonError::PricingFetch(e.to_string()))?;
+            .map_err(|e| TokemonError::Pricing(e.to_string()))?;
         Ok(text)
     }
 
     fn parse_pricing(data: &str) -> Result<Self> {
-        let models: HashMap<String, ModelPricing> = serde_json::from_str(data).map_err(|e| {
-            TokemonError::PricingFetch(format!("failed to parse pricing JSON: {e}"))
-        })?;
+        let models: HashMap<String, ModelPricing> = serde_json::from_str(data)
+            .map_err(|e| TokemonError::Pricing(format!("failed to parse pricing JSON: {e}")))?;
         Ok(Self { models })
     }
 }

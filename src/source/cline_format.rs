@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fs;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -8,10 +9,77 @@ use crate::error::{Result, TokemonError};
 use crate::paths;
 use crate::types::Record;
 
+/// Configuration trait for Cline-derived sources.
+///
+/// Implement this with a zero-sized type to define a new source:
+/// ```ignore
+/// pub struct ClineConfig;
+/// impl ClineSourceConfig for ClineConfig {
+///     const NAME: &'static str = "cline";
+///     const DISPLAY_NAME: &'static str = "Cline";
+///     const EXTENSION_ID: &'static str = "saoudrizwan.claude-dev";
+/// }
+/// pub type ClineSource = ClineDerivedSource<ClineConfig>;
+/// ```
+pub trait ClineSourceConfig: Send + Sync + 'static {
+    const NAME: &'static str;
+    const DISPLAY_NAME: &'static str;
+    const EXTENSION_ID: &'static str;
+}
+
+/// Generic source for all Cline-derived tools (Cline, Roo Code, Kilo Code).
+///
+/// Parameterised by a [`ClineSourceConfig`] that provides the name, display name
+/// and VS Code extension ID. Delegates all parsing to [`ClineFormat`].
+pub struct ClineDerivedSource<C: ClineSourceConfig> {
+    format: ClineFormat,
+    _config: PhantomData<C>,
+}
+
+impl<C: ClineSourceConfig> Default for ClineDerivedSource<C> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<C: ClineSourceConfig> ClineDerivedSource<C> {
+    pub fn new() -> Self {
+        Self {
+            format: ClineFormat {
+                provider_name: C::NAME,
+                extension_id: C::EXTENSION_ID,
+            },
+            _config: PhantomData,
+        }
+    }
+}
+
+impl<C: ClineSourceConfig> super::Source for ClineDerivedSource<C> {
+    fn name(&self) -> &'static str {
+        C::NAME
+    }
+
+    fn display_name(&self) -> &'static str {
+        C::DISPLAY_NAME
+    }
+
+    fn data_dir(&self) -> PathBuf {
+        self.format.data_dir()
+    }
+
+    fn discover_files(&self) -> Vec<PathBuf> {
+        self.format.discover_files()
+    }
+
+    fn parse_file(&self, path: &Path) -> Result<Vec<Record>> {
+        self.format.parse_file(path)
+    }
+}
+
 /// Shared parsing logic for Cline-derived tools (Cline, Roo Code, Kilo Code)
-pub struct ClineFormat {
-    pub provider_name: &'static str,
-    pub extension_id: &'static str,
+struct ClineFormat {
+    provider_name: &'static str,
+    extension_id: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -36,7 +104,7 @@ struct ApiReqData {
 }
 
 impl ClineFormat {
-    pub fn discover_files(&self) -> Vec<PathBuf> {
+    fn discover_files(&self) -> Vec<PathBuf> {
         // Structure: {globalStorage}/{extension_id}/tasks/{task_id}/ui_messages.json
         let storage_dirs = paths::vscode_global_storage_dirs();
         let mut files = Vec::new();
@@ -59,7 +127,7 @@ impl ClineFormat {
         files
     }
 
-    pub fn data_dir(&self) -> PathBuf {
+    fn data_dir(&self) -> PathBuf {
         let storage_dirs = paths::vscode_global_storage_dirs();
         if let Some(first) = storage_dirs.first() {
             first.join(self.extension_id)
@@ -68,7 +136,7 @@ impl ClineFormat {
         }
     }
 
-    pub fn parse_file(&self, path: &Path) -> Result<Vec<Record>> {
+    fn parse_file(&self, path: &Path) -> Result<Vec<Record>> {
         let content = fs::read_to_string(path).map_err(TokemonError::Io)?;
         let messages: Vec<UiMessage> =
             serde_json::from_str(&content).map_err(|e| TokemonError::JsonParse {

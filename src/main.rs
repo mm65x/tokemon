@@ -269,11 +269,11 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         || config.budget.weekly.is_some()
         || config.budget.monthly.is_some()
     {
-        let (daily, weekly, monthly) = pacemaker::evaluate(&entries, &config.budget);
+        let status = pacemaker::evaluate(&entries, &config.budget);
         match freq {
-            Frequency::Daily => daily.map(|(s, l)| format_budget_short(s, l)),
-            Frequency::Weekly => weekly.map(|(s, l)| format_budget_short(s, l)),
-            Frequency::Monthly => monthly.map(|(s, l)| format_budget_short(s, l)),
+            Frequency::Daily => status.daily.map(|b| format_budget_short(b.spent, b.limit)),
+            Frequency::Weekly => status.weekly.map(|b| format_budget_short(b.spent, b.limit)),
+            Frequency::Monthly => status.monthly.map(|b| format_budget_short(b.spent, b.limit)),
         }
     } else {
         None
@@ -296,8 +296,8 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
 
 fn cmd_budget(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let entries = load_and_price(cli, config, false, cli.since, cli.until)?;
-    let (daily, weekly, monthly) = pacemaker::evaluate(&entries, &config.budget);
-    render::print_budget(daily, weekly, monthly);
+    let status = pacemaker::evaluate(&entries, &config.budget);
+    render::print_budget(&status);
     Ok(())
 }
 
@@ -442,9 +442,12 @@ fn parse_with_cache(
         .collect();
 
     // Mark entries from deleted files as preserved (only when discovering all providers,
-    // otherwise we'd incorrectly mark entries from non-filtered providers)
+    // otherwise we'd incorrectly mark entries from non-filtered providers).
+    // Best-effort: log a warning if it fails rather than aborting the pipeline.
     if filter.is_empty() {
-        cache.mark_preserved(&discovered_files);
+        if let Err(e) = cache.mark_preserved(&discovered_files) {
+            eprintln!("[tokemon] Warning: failed to mark preserved entries: {e}");
+        }
     }
 
     // Find files that need (re)parsing.

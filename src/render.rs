@@ -443,37 +443,60 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
     let width = terminal_width();
 
     let column_sets = [
-        (true, true, true, true),
-        (true, true, false, true),
-        (true, true, false, false),
-        (false, false, false, false),
+        BreakdownCols {
+            show_in: true,
+            show_out: true,
+            show_cw: true,
+            show_cr: true,
+            show_client: false,
+            show_api: false,
+        },
+        BreakdownCols {
+            show_in: true,
+            show_out: true,
+            show_cw: false,
+            show_cr: true,
+            show_client: false,
+            show_api: false,
+        },
+        BreakdownCols {
+            show_in: true,
+            show_out: true,
+            show_cw: false,
+            show_cr: false,
+            show_client: false,
+            show_api: false,
+        },
+        BreakdownCols {
+            show_in: false,
+            show_out: false,
+            show_cw: false,
+            show_cr: false,
+            show_client: false,
+            show_api: false,
+        },
     ];
 
-    for &(show_in, show_out, show_cw, show_cr) in &column_sets {
-        let masked = (
-            show_in && col_cfg.input,
-            show_out && col_cfg.output,
-            show_cw && col_cfg.cache_write,
-            show_cr && col_cfg.cache_read,
-        );
-        let table = render_compact(report, color, masked.0, masked.1, masked.2, masked.3);
+    for cols in &column_sets {
+        let masked = cols.mask(col_cfg);
+        let table = render_compact(report, color, masked);
         let first_line = table.lines().next().unwrap_or("");
-        if display_width(first_line) <= width || (!masked.0 && !masked.1) {
+        if display_width(first_line) <= width || (!masked.show_in && !masked.show_out) {
             println!("{table}");
             return;
         }
     }
 }
 
-#[allow(clippy::fn_params_excessive_bools, clippy::similar_names)]
-fn render_compact(
-    report: &Report,
-    color: bool,
-    show_in: bool,
-    show_out: bool,
-    show_cw: bool,
-    show_cr: bool,
-) -> String {
+#[allow(clippy::similar_names)]
+fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
+    let BreakdownCols {
+        show_in,
+        show_out,
+        show_cw,
+        show_cr,
+        ..
+    } = cols;
     let mut header: Vec<String> = vec!["Date".into()];
     if show_in {
         header.push("Input".into());
@@ -499,7 +522,8 @@ fn render_compact(
     for summary in &report.summaries {
         let total = summary.total_input
             + summary.total_output
-            + summary.total_cache
+            + summary.total_cache_creation()
+            + summary.total_cache_read()
             + summary.total_thinking;
 
         let mut row: Vec<String> = vec![summary.label.clone()];
@@ -584,18 +608,19 @@ pub fn print_statusline(
     );
 }
 
-pub fn print_budget(
-    daily: Option<(f64, f64)>,
-    weekly: Option<(f64, f64)>,
-    monthly: Option<(f64, f64)>,
-) {
-    let lines = [("Daily", daily), ("Weekly", weekly), ("Monthly", monthly)];
+pub fn print_budget(status: &crate::pacemaker::BudgetStatus) {
+    let lines = [
+        ("Daily", status.daily),
+        ("Weekly", status.weekly),
+        ("Monthly", status.monthly),
+    ];
 
     let mut any = false;
     for (label, budget) in &lines {
-        if let Some((spent, limit)) = budget {
+        if let Some(bp) = budget {
             any = true;
-            let pct = if *limit > 0.0 {
+            let (spent, limit) = (bp.spent, bp.limit);
+            let pct = if limit > 0.0 {
                 spent / limit * 100.0
             } else {
                 0.0
@@ -704,7 +729,7 @@ fn csv_quote(s: &str) -> String {
 pub fn print_csv_compact(report: &Report) {
     println!("date,input,output,cache_write,cache_read,thinking,total_tokens,cost");
     for s in &report.summaries {
-        let total = s.total_input + s.total_output + s.total_cache + s.total_thinking;
+        let total = s.total_input + s.total_output + s.total_cache() + s.total_thinking;
         println!(
             "{},{},{},{},{},{},{},{:.2}",
             csv_quote(&s.label),

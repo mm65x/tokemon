@@ -259,12 +259,20 @@ fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String,
 fn tool_budget_status(cli: &Cli, config: &Config) -> Result<String, String> {
     let entries =
         crate::load_and_price(cli, config, true, None, None).map_err(|e| e.to_string())?;
-    let (daily, weekly, monthly) = crate::pacemaker::evaluate(&entries, &config.budget);
+    let status = crate::pacemaker::evaluate(&entries, &config.budget);
 
+    let to_json = |bp: &crate::pacemaker::BudgetPeriod| {
+        let pct = if bp.limit > 0.0 {
+            (bp.spent / bp.limit * 100.0).round()
+        } else {
+            0.0
+        };
+        json!({"spent": (bp.spent * 100.0).round() / 100.0, "limit": bp.limit, "percent": pct})
+    };
     let result = json!({
-        "daily": daily.map(|(spent, limit)| json!({"spent": (spent * 100.0).round() / 100.0, "limit": limit, "percent": if limit > 0.0 { (spent / limit * 100.0).round() } else { 0.0 }})),
-        "weekly": weekly.map(|(spent, limit)| json!({"spent": (spent * 100.0).round() / 100.0, "limit": limit, "percent": if limit > 0.0 { (spent / limit * 100.0).round() } else { 0.0 }})),
-        "monthly": monthly.map(|(spent, limit)| json!({"spent": (spent * 100.0).round() / 100.0, "limit": limit, "percent": if limit > 0.0 { (spent / limit * 100.0).round() } else { 0.0 }})),
+        "daily": status.daily.as_ref().map(to_json),
+        "weekly": status.weekly.as_ref().map(to_json),
+        "monthly": status.monthly.as_ref().map(to_json),
     });
 
     serde_json::to_string_pretty(&result).map_err(|e| e.to_string())

@@ -29,10 +29,10 @@ use crate::types::Record;
 
 pub trait Source: Send + Sync {
     /// Short identifier: "claude-code", "codex", "gemini"
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
 
     /// Human-readable: "Claude Code", "Codex CLI", "Gemini CLI"
-    fn display_name(&self) -> &str;
+    fn display_name(&self) -> &'static str;
 
     /// Return the base data directory for display purposes
     fn data_dir(&self) -> PathBuf;

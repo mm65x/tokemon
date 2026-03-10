@@ -80,7 +80,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             // Period summary row
             let total = summary.total_input
                 + summary.total_output
-                + summary.total_cache
+                + summary.total_cache()
                 + summary.total_thinking;
             let period_cells = cols.build_row(
                 &summary.label,

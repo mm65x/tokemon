@@ -11,11 +11,14 @@ pub enum TokemonError {
         source: serde_json::Error,
     },
 
+    #[error("Database error: {0}")]
+    Database(#[from] rusqlite::Error),
+
     #[error("Provider '{0}' not found")]
     ProviderNotFound(String),
 
-    #[error("Failed to fetch pricing data: {0}")]
-    PricingFetch(String),
+    #[error("Pricing error: {0}")]
+    Pricing(String),
 }
 
 pub type Result<T> = std::result::Result<T, TokemonError>;

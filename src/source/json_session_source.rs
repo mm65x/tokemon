@@ -74,11 +74,11 @@ struct SessionTokens {
 }
 
 impl<C: JsonSessionSourceConfig> super::Source for JsonSessionSource<C> {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         C::NAME
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         C::DISPLAY_NAME
     }
 

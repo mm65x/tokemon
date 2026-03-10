@@ -182,10 +182,6 @@ fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<
 
         let total_input: u64 = models.iter().map(|m| m.input_tokens).sum();
         let total_output: u64 = models.iter().map(|m| m.output_tokens).sum();
-        let total_cache: u64 = models
-            .iter()
-            .map(|m| m.cache_read_tokens + m.cache_creation_tokens)
-            .sum();
         let total_thinking: u64 = models.iter().map(|m| m.thinking_tokens).sum();
         let total_cost: f64 = models.iter().map(|m| m.cost_usd).sum();
         let total_requests: u64 = models.iter().map(|m| m.request_count).sum();
@@ -196,7 +192,6 @@ fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<
             models,
             total_input,
             total_output,
-            total_cache,
             total_thinking,
             total_cost,
             total_requests,

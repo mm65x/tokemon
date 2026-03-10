@@ -194,8 +194,8 @@ fn handle_tools_call(id: &Value, request: &Value, cli: &Cli, config: &Config) ->
 
 fn tool_usage_today(cli: &Cli, config: &Config) -> Result<String, String> {
     let today = chrono::Utc::now().date_naive();
-    let entries =
-        crate::load_and_price(cli, config, true, Some(today), None).map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(cli, config, true, Some(today), None)
+        .map_err(|e| e.to_string())?;
     let mut total_tokens = 0u64;
     let mut total_cost = 0.0f64;
 
@@ -225,8 +225,8 @@ fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String,
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<chrono::NaiveDate>().ok());
 
-    let entries =
-        crate::load_and_price(cli, config, true, since, until).map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(cli, config, true, since, until)
+        .map_err(|e| e.to_string())?;
 
     let entries = rollup::filter_by_date(entries, since, until);
 
@@ -257,8 +257,8 @@ fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String,
 }
 
 fn tool_budget_status(cli: &Cli, config: &Config) -> Result<String, String> {
-    let entries =
-        crate::load_and_price(cli, config, true, None, None).map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(cli, config, true, None, None)
+        .map_err(|e| e.to_string())?;
     let status = crate::pacemaker::evaluate(&entries, &config.budget);
 
     let to_json = |bp: &crate::pacemaker::BudgetPeriod| {
@@ -284,8 +284,8 @@ fn tool_session_cost(cli: &Cli, config: &Config, args: &Value) -> Result<String,
         .and_then(|v| v.as_str())
         .ok_or_else(|| "session_id is required".to_string())?;
 
-    let entries =
-        crate::load_and_price(cli, config, true, None, None).map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(cli, config, true, None, None)
+        .map_err(|e| e.to_string())?;
     let sessions = rollup::aggregate_by_session(&entries);
 
     let matched: Vec<_> = sessions

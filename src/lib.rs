@@ -29,6 +29,7 @@ pub mod display;
 pub mod error;
 pub mod pacemaker;
 pub mod paths;
+pub mod pipeline;
 pub mod render;
 pub mod rollup;
 pub mod source;

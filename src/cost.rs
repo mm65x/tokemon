@@ -204,17 +204,16 @@ impl PricingEngine {
     }
 
     fn fetch_remote() -> Result<String> {
-        let client = reqwest::blocking::Client::builder()
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| TokemonError::Pricing(e.to_string()))?;
-        let resp = client
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(std::time::Duration::from_secs(5))
+            .timeout_read(std::time::Duration::from_secs(30))
+            .build();
+        let resp = agent
             .get(PRICING_URL)
-            .send()
+            .call()
             .map_err(|e| TokemonError::Pricing(e.to_string()))?;
         let text = resp
-            .text()
+            .into_string()
             .map_err(|e| TokemonError::Pricing(e.to_string()))?;
         Ok(text)
     }

@@ -348,9 +348,7 @@ fn cmd_sessions(cli: &Cli, config: &Config, top: usize) -> anyhow::Result<()> {
 fn cmd_prune(before: NaiveDate) -> anyhow::Result<()> {
     let cache = Cache::open()?;
     let deleted = cache.prune_before(before)?;
-    println!(
-        "Pruned {deleted} preserved entries with timestamps before {before}."
-    );
+    println!("Pruned {deleted} preserved entries with timestamps before {before}.");
     Ok(())
 }
 
@@ -395,9 +393,7 @@ fn parse_with_cache(
     let mut cache = match Cache::open() {
         Ok(c) => Some(c),
         Err(e) => {
-            eprintln!(
-                "[tokemon] Warning: cache unavailable ({e}); parsing all files"
-            );
+            eprintln!("[tokemon] Warning: cache unavailable ({e}); parsing all files");
             None
         }
     };
@@ -471,9 +467,7 @@ fn parse_with_cache(
         // No files changed, but update the discovery timestamp so we
         // don't re-discover on the next invocation within the interval.
         if let Err(e) = cache.set_last_discovery() {
-            eprintln!(
-                "[tokemon] Warning: failed to update discovery timestamp: {e}"
-            );
+            eprintln!("[tokemon] Warning: failed to update discovery timestamp: {e}");
         }
     } else {
         use rayon::prelude::*;

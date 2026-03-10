@@ -248,7 +248,10 @@ impl Config {
     }
 
     pub fn config_path() -> PathBuf {
-        let config_dir = directories::ProjectDirs::from("", "", "tokemon").map_or_else(|| paths::home_dir().join(".config/tokemon"), |d| d.config_dir().to_path_buf());
+        let config_dir = directories::ProjectDirs::from("", "", "tokemon").map_or_else(
+            || paths::home_dir().join(".config/tokemon"),
+            |d| d.config_dir().to_path_buf(),
+        );
         config_dir.join(CONFIG_FILENAME)
     }
 }

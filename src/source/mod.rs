@@ -107,7 +107,10 @@ impl SourceSet {
     }
 
     pub fn all(&self) -> Vec<&dyn Source> {
-        self.providers.iter().map(std::convert::AsRef::as_ref).collect()
+        self.providers
+            .iter()
+            .map(std::convert::AsRef::as_ref)
+            .collect()
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Source> {

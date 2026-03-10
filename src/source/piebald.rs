@@ -27,18 +27,18 @@ impl PiebaldSource {
 }
 
 impl super::Source for PiebaldSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "piebald"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Piebald"
     }
 
     fn data_dir(&self) -> PathBuf {
         self.db_path
             .parent()
-            .map(|p| p.to_path_buf())
+            .map(std::path::Path::to_path_buf)
             .unwrap_or_default()
     }
 

@@ -20,7 +20,7 @@ fn use_color() -> bool {
 
 fn ansi(code: &str, s: &str, color: bool) -> String {
     if color {
-        format!("\x1b[{}m{}\x1b[0m", code, s)
+        format!("\x1b[{code}m{s}\x1b[0m")
     } else {
         s.to_string()
     }
@@ -101,9 +101,7 @@ fn style_header(header: &mut [String], color: bool) {
 /// Terminal width in visible columns.
 #[must_use]
 fn terminal_width() -> usize {
-    terminal_size::terminal_size()
-        .map(|(w, _)| w.0 as usize)
-        .unwrap_or(120)
+    terminal_size::terminal_size().map_or(120, |(w, _)| w.0 as usize)
 }
 
 /// Visible width of a string, ignoring ANSI escape codes.
@@ -155,6 +153,7 @@ pub fn print_table(report: &Report, breakdown: bool, col_cfg: &crate::config::Co
 }
 
 #[derive(Clone, Copy)]
+#[allow(clippy::similar_names)]
 struct BreakdownCols {
     show_in: bool,
     show_out: bool,
@@ -238,16 +237,17 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
 
     for cols in &column_sets {
         let masked = cols.mask(col_cfg);
-        let table = render_breakdown(report, color, &masked);
+        let table = render_breakdown(report, color, masked);
         let first_line = table.lines().next().unwrap_or("");
         if display_width(first_line) <= width || (!masked.show_in && !masked.show_out) {
-            println!("{}", table);
+            println!("{table}");
             return;
         }
     }
 }
 
-fn render_breakdown(report: &Report, color: bool, cols: &BreakdownCols) -> String {
+#[allow(clippy::too_many_lines)]
+fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String {
     let BreakdownCols {
         show_in,
         show_out,
@@ -255,7 +255,7 @@ fn render_breakdown(report: &Report, color: bool, cols: &BreakdownCols) -> Strin
         show_cr,
         show_client,
         show_api,
-    } = *cols;
+    } = cols;
     let mut header: Vec<String> = vec!["Date".into(), "Model".into()];
     if show_api {
         header.push("API Provider".into());
@@ -459,12 +459,13 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
         let table = render_compact(report, color, masked.0, masked.1, masked.2, masked.3);
         let first_line = table.lines().next().unwrap_or("");
         if display_width(first_line) <= width || (!masked.0 && !masked.1) {
-            println!("{}", table);
+            println!("{table}");
             return;
         }
     }
 }
 
+#[allow(clippy::fn_params_excessive_bools, clippy::similar_names)]
 fn render_compact(
     report: &Report,
     color: bool,
@@ -551,9 +552,13 @@ fn grand_totals(report: &Report) -> (u64, u64, u64, u64, u64) {
     let gcw: u64 = report
         .summaries
         .iter()
-        .map(|s| s.total_cache_creation())
+        .map(super::types::DailySummary::total_cache_creation)
         .sum();
-    let gcr: u64 = report.summaries.iter().map(|s| s.total_cache_read()).sum();
+    let gcr: u64 = report
+        .summaries
+        .iter()
+        .map(super::types::DailySummary::total_cache_read)
+        .sum();
     let gth: u64 = report.summaries.iter().map(|s| s.total_thinking).sum();
     (gi, go, gcw, gcr, gi + go + gcw + gcr + gth)
 }
@@ -567,7 +572,7 @@ pub fn print_statusline(
     let provider_str = if provider_count == 1 {
         "1 provider".to_string()
     } else {
-        format!("{} providers", provider_count)
+        format!("{provider_count} providers")
     };
 
     println!(
@@ -643,8 +648,8 @@ pub fn format_tokens_short(n: u64) -> String {
 
 pub fn print_json(report: &Report) {
     match serde_json::to_string_pretty(report) {
-        Ok(json) => println!("{}", json),
-        Err(e) => eprintln!("[tokemon] Error serializing report: {}", e),
+        Ok(json) => println!("{json}"),
+        Err(e) => eprintln!("[tokemon] Error serializing report: {e}"),
     }
 }
 
@@ -653,7 +658,7 @@ pub fn print_discover(providers: &[(&str, &str, bool, String, usize)]) {
         .iter()
         .map(
             |(name, display, available, data_dir, file_count)| DiscoverRow {
-                provider: format!("{} ({})", display, name),
+                provider: format!("{display} ({name})"),
                 status: if *available {
                     "Found".to_string()
                 } else {
@@ -666,7 +671,7 @@ pub fn print_discover(providers: &[(&str, &str, bool, String, usize)]) {
         .collect();
 
     let table = Table::new(&rows).with(Style::rounded()).to_string();
-    println!("{}", table);
+    println!("{table}");
 }
 
 fn format_tokens(n: u64) -> String {
@@ -813,13 +818,13 @@ pub fn print_sessions_table(report: &SessionReport) {
         .with(Modify::new(Columns::new(4..)).with(Alignment::right()))
         .to_string();
 
-    println!("{}", table);
+    println!("{table}");
 }
 
 pub fn print_sessions_json(report: &SessionReport) {
     match serde_json::to_string_pretty(report) {
-        Ok(json) => println!("{}", json),
-        Err(e) => eprintln!("[tokemon] Error serializing sessions: {}", e),
+        Ok(json) => println!("{json}"),
+        Err(e) => eprintln!("[tokemon] Error serializing sessions: {e}"),
     }
 }
 

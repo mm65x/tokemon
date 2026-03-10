@@ -38,18 +38,18 @@ fn provider_prefix(provider_id: &str) -> &str {
 }
 
 impl super::Source for OpenCodeSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "opencode"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "OpenCode"
     }
 
     fn data_dir(&self) -> PathBuf {
         self.db_path
             .parent()
-            .map(|p| p.to_path_buf())
+            .map(std::path::Path::to_path_buf)
             .unwrap_or_default()
     }
 
@@ -61,6 +61,7 @@ impl super::Source for OpenCodeSource {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn parse_file(&self, path: &Path) -> Result<Vec<Record>> {
         let conn = match rusqlite::Connection::open_with_flags(
             path,
@@ -72,7 +73,7 @@ impl super::Source for OpenCodeSource {
                 c
             }
             Err(e) => {
-                eprintln!("[tokemon] Warning: failed to open OpenCode DB: {}", e);
+                eprintln!("[tokemon] Warning: failed to open OpenCode DB: {e}");
                 return Ok(Vec::new());
             }
         };
@@ -96,7 +97,7 @@ impl super::Source for OpenCodeSource {
         ) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[tokemon] Warning: failed to query OpenCode DB: {}", e);
+                eprintln!("[tokemon] Warning: failed to query OpenCode DB: {e}");
                 return Ok(Vec::new());
             }
         };
@@ -155,7 +156,7 @@ impl super::Source for OpenCodeSource {
                 let model = if prefix.is_empty() {
                     model_clean.to_string()
                 } else {
-                    format!("{}{}", prefix, model_clean)
+                    format!("{prefix}{model_clean}")
                 };
 
                 Some(Record {

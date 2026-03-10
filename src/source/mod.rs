@@ -102,18 +102,18 @@ impl SourceSet {
         self.providers
             .iter()
             .filter(|p| p.is_available())
-            .map(|p| p.as_ref())
+            .map(std::convert::AsRef::as_ref)
             .collect()
     }
 
     pub fn all(&self) -> Vec<&dyn Source> {
-        self.providers.iter().map(|p| p.as_ref()).collect()
+        self.providers.iter().map(std::convert::AsRef::as_ref).collect()
     }
 
     pub fn get(&self, name: &str) -> Option<&dyn Source> {
         self.providers
             .iter()
             .find(|p| p.name() == name)
-            .map(|p| p.as_ref())
+            .map(std::convert::AsRef::as_ref)
     }
 }

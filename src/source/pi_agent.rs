@@ -54,11 +54,11 @@ struct PiUsage {
 }
 
 impl super::Source for PiAgentSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "pi-agent"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Pi Agent"
     }
 
@@ -78,7 +78,7 @@ impl super::Source for PiAgentSource {
 
         let entries = reader
             .lines()
-            .filter_map(|line| line.ok())
+            .map_while(std::result::Result::ok)
             .filter(|line| line.contains("\"message\"") && line.contains("\"assistant\""))
             .filter_map(|line| serde_json::from_str::<PiLine>(&line).ok())
             .filter(|parsed| parsed.line_type.as_deref() == Some("message"))

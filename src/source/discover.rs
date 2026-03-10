@@ -33,12 +33,11 @@ fn walk_collect(
     predicate: &dyn Fn(&Path) -> bool,
     out: &mut Vec<PathBuf>,
 ) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
     };
 
-    for entry in entries.filter_map(|e| e.ok()) {
+    for entry in entries.filter_map(std::result::Result::ok) {
         // Use entry.file_type() which does NOT follow symlinks,
         // avoiding infinite loops from circular symlinks.
         let Ok(ft) = entry.file_type() else {

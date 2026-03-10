@@ -27,11 +27,11 @@ impl ClineSource {
 }
 
 impl super::Source for ClineSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "cline"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Cline"
     }
 

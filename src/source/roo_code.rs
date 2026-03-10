@@ -27,11 +27,11 @@ impl RooCodeSource {
 }
 
 impl super::Source for RooCodeSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "roo-code"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Roo Code"
     }
 

@@ -46,7 +46,7 @@ impl ClineFormat {
             let Ok(tasks) = std::fs::read_dir(&tasks_dir) else {
                 continue;
             };
-            for task in tasks.filter_map(|e| e.ok()) {
+            for task in tasks.filter_map(std::result::Result::ok) {
                 if !task.path().is_dir() {
                     continue;
                 }
@@ -81,7 +81,7 @@ impl ClineFormat {
             .parent()
             .and_then(|p| p.file_name())
             .and_then(|s| s.to_str())
-            .map(|s| s.to_string());
+            .map(std::string::ToString::to_string);
 
         let mut entries = Vec::new();
 

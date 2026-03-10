@@ -103,15 +103,10 @@ impl<C: JsonlSourceConfig> super::Source for JsonlSource<C> {
 
         let entries = reader
             .lines()
-            .filter_map(|line| line.ok())
+            .map_while(std::result::Result::ok)
             .filter(|line| line.contains("\"assistant\"") || line.contains("\"response\""))
             .filter_map(|line| serde_json::from_str::<JsonlLine>(&line).ok())
-            .filter(|parsed| {
-                matches!(
-                    parsed.line_type.as_deref(),
-                    Some("assistant") | Some("response")
-                )
-            })
+            .filter(|parsed| matches!(parsed.line_type.as_deref(), Some("assistant" | "response")))
             .filter_map(|parsed| {
                 let usage = parsed.usage?;
                 let timestamp = parsed

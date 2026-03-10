@@ -20,9 +20,8 @@ pub fn run(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let mut stdout = io::stdout();
 
     for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
+        let Ok(line) = line else {
+            break;
         };
 
         let trimmed = line.trim();
@@ -41,7 +40,7 @@ pub fn run(cli: &Cli, config: &Config) -> anyhow::Result<()> {
                         "message": format!("Parse error: {}", e)
                     }
                 });
-                writeln!(stdout, "{}", err)?;
+                writeln!(stdout, "{err}")?;
                 stdout.flush()?;
                 continue;
             }
@@ -68,7 +67,7 @@ pub fn run(cli: &Cli, config: &Config) -> anyhow::Result<()> {
             }),
         };
 
-        writeln!(stdout, "{}", response)?;
+        writeln!(stdout, "{response}")?;
         stdout.flush()?;
     }
 
@@ -165,7 +164,7 @@ fn handle_tools_call(id: &Value, request: &Value, cli: &Cli, config: &Config) ->
         "get_usage_period" => tool_usage_period(cli, config, &arguments),
         "get_budget_status" => tool_budget_status(cli, config),
         "get_session_cost" => tool_session_cost(cli, config, &arguments),
-        _ => Err(format!("Unknown tool: {}", tool_name)),
+        _ => Err(format!("Unknown tool: {tool_name}")),
     };
 
     match result {
@@ -243,7 +242,7 @@ fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String,
     };
 
     let total_cost: f64 = summaries.iter().map(|s| s.total_cost).sum();
-    let total_tokens: u64 = entries.iter().map(|e| e.total_tokens()).sum();
+    let total_tokens: u64 = entries.iter().map(super::types::Record::total_tokens).sum();
 
     let report = crate::types::Report {
         period: period.to_string(),
@@ -287,7 +286,7 @@ fn tool_session_cost(cli: &Cli, config: &Config, args: &Value) -> Result<String,
         .collect();
 
     if matched.is_empty() {
-        return Err(format!("No session found matching '{}'", session_id));
+        return Err(format!("No session found matching '{session_id}'"));
     }
 
     let total_cost: f64 = matched.iter().map(|s| s.cost).sum();

@@ -107,8 +107,7 @@ pub fn aggregate_by_session(entries: &[Record]) -> Vec<SessionSummary> {
             let dominant_model = model_tokens
                 .into_iter()
                 .max_by_key(|(_, tokens)| *tokens)
-                .map(|(m, _)| m)
-                .unwrap_or("unknown");
+                .map_or("unknown", |(m, _)| m);
 
             SessionSummary {
                 session_id: sid.to_string(),

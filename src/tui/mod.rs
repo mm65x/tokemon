@@ -73,7 +73,7 @@ async fn run_async(config: &Config, scope: Scope, tick_secs: u64) -> anyhow::Res
             other => {
                 app.handle_event(other);
             }
-        };
+        }
 
         if app.should_quit {
             break;

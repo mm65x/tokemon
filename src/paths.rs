@@ -10,6 +10,7 @@ const VSCODE_FORKS: &[&str] = &[
     "Positron",
 ];
 
+#[allow(clippy::map_unwrap_or)]
 pub fn home_dir() -> PathBuf {
     directories::BaseDirs::new()
         .map(|d| d.home_dir().to_path_buf())
@@ -20,9 +21,10 @@ pub fn home_dir() -> PathBuf {
 }
 
 pub fn cache_dir() -> PathBuf {
-    directories::ProjectDirs::from("", "", "tokemon")
-        .map(|d| d.cache_dir().to_path_buf())
-        .unwrap_or_else(|| home_dir().join(".cache/tokemon"))
+    directories::ProjectDirs::from("", "", "tokemon").map_or_else(
+        || home_dir().join(".cache/tokemon"),
+        |d| d.cache_dir().to_path_buf(),
+    )
 }
 
 pub fn vscode_global_storage_dirs() -> Vec<PathBuf> {

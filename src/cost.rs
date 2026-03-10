@@ -64,15 +64,13 @@ impl PricingEngine {
                 if let Some(data) = Self::read_stale_cache(&cache_path) {
                     if let Ok(engine) = Self::parse_pricing(&data) {
                         eprintln!(
-                            "[tokemon] Warning: failed to fetch pricing: {}; using cached prices",
-                            e
+                            "[tokemon] Warning: failed to fetch pricing: {e}; using cached prices"
                         );
                         return Ok(engine);
                     }
                 }
                 eprintln!(
-                    "[tokemon] Warning: failed to fetch pricing: {}; costs will be $0.00",
-                    e
+                    "[tokemon] Warning: failed to fetch pricing: {e}; costs will be $0.00"
                 );
                 Ok(Self {
                     models: HashMap::new(),
@@ -142,14 +140,14 @@ impl PricingEngine {
 
         // 3. Try with common provider prefixes
         let prefixed_variants = [
-            format!("anthropic/{}", model),
-            format!("anthropic/{}", normalized),
-            format!("openai/{}", model),
-            format!("openai/{}", normalized),
-            format!("google/{}", model),
-            format!("google/{}", normalized),
-            format!("vertex_ai/{}", model),
-            format!("vertex_ai/{}", normalized),
+            format!("anthropic/{model}"),
+            format!("anthropic/{normalized}"),
+            format!("openai/{model}"),
+            format!("openai/{normalized}"),
+            format!("google/{model}"),
+            format!("google/{normalized}"),
+            format!("vertex_ai/{model}"),
+            format!("vertex_ai/{normalized}"),
         ];
         for variant in &prefixed_variants {
             if let Some(p) = self.models.get(variant.as_str()) {
@@ -220,7 +218,7 @@ impl PricingEngine {
 
     fn parse_pricing(data: &str) -> Result<Self> {
         let models: HashMap<String, ModelPricing> = serde_json::from_str(data).map_err(|e| {
-            TokemonError::PricingFetch(format!("failed to parse pricing JSON: {}", e))
+            TokemonError::PricingFetch(format!("failed to parse pricing JSON: {e}"))
         })?;
         Ok(Self { models })
     }

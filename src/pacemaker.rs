@@ -5,6 +5,7 @@ use crate::types::Record;
 
 /// Evaluate spending against budget limits.
 /// Returns (spent, limit) pairs for each configured budget period.
+#[allow(clippy::type_complexity)]
 pub fn evaluate(
     entries: &[Record],
     budget: &BudgetConfig,
@@ -18,7 +19,7 @@ pub fn evaluate(
 
     let weekly = budget.weekly.map(|limit| {
         let week_start =
-            today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+            today - chrono::Duration::days(i64::from(today.weekday().num_days_from_monday()));
         let spent = sum_cost_since(entries, week_start);
         (spent, limit)
     });

@@ -25,11 +25,11 @@ impl CursorSource {
 }
 
 impl super::Source for CursorSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "cursor"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Cursor"
     }
 

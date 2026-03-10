@@ -26,7 +26,7 @@ impl JsonSessionSourceConfig for QwenConfig {
             return Vec::new();
         };
         projects
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.path().is_dir())
             .map(|e| e.path().join("session.json"))
             .filter(|p| p.is_file())

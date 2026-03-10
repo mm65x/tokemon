@@ -798,32 +798,30 @@ impl App {
             }
             KeyCode::Left => {
                 let new_scope = match self.scope {
-                    Scope::Today => Scope::Today,
-                    Scope::Week => Scope::Today,
+                    Scope::Today | Scope::Week => Scope::Today,
                     Scope::Month => Scope::Week,
                     Scope::AllTime => Scope::Month,
                 };
-                if new_scope != self.scope {
+                if new_scope == self.scope {
+                    false
+                } else {
                     self.scope = new_scope;
                     self.reset_view_state();
                     true
-                } else {
-                    false
                 }
             }
             KeyCode::Right => {
                 let new_scope = match self.scope {
                     Scope::Today => Scope::Week,
                     Scope::Week => Scope::Month,
-                    Scope::Month => Scope::AllTime,
-                    Scope::AllTime => Scope::AllTime,
+                    Scope::Month | Scope::AllTime => Scope::AllTime,
                 };
-                if new_scope != self.scope {
+                if new_scope == self.scope {
+                    false
+                } else {
                     self.scope = new_scope;
                     self.reset_view_state();
                     true
-                } else {
-                    false
                 }
             }
             _ => false,
@@ -993,7 +991,10 @@ impl App {
         }
 
         self.all_time_base_cost = historical.iter().map(|r| r.cost_usd.unwrap_or(0.0)).sum();
-        self.all_time_base_tokens = historical.iter().map(|r| r.total_tokens()).sum();
+        self.all_time_base_tokens = historical
+            .iter()
+            .map(super::super::types::Record::total_tokens)
+            .sum();
 
         // Build weekly sparkline from historical records.
         let use_cost = self.config.sparkline_metric == "cost";
@@ -1202,7 +1203,11 @@ impl App {
             .iter()
             .map(|r| r.cost_usd.unwrap_or(0.0))
             .sum();
-        let window_tokens: u64 = self.cached_records.iter().map(|r| r.total_tokens()).sum();
+        let window_tokens: u64 = self
+            .cached_records
+            .iter()
+            .map(super::super::types::Record::total_tokens)
+            .sum();
         self.cards[3].cost = self.all_time_base_cost + window_cost;
         self.cards[3].tokens = self.all_time_base_tokens + window_tokens;
         self.cards[3].sparkline = merge_weekly_sparklines(
@@ -1290,7 +1295,10 @@ impl App {
         }
 
         self.detail_total_cost = models.iter().map(|m| m.cost_usd).sum();
-        self.detail_total_tokens = models.iter().map(|m| m.total_tokens()).sum();
+        self.detail_total_tokens = models
+            .iter()
+            .map(super::super::types::ModelUsage::total_tokens)
+            .sum();
         self.detail_total_requests = models.iter().map(|m| m.request_count).sum();
         self.detail_models = models;
 
@@ -1459,7 +1467,7 @@ fn build_hour_sparkline(
     use_cost: bool,
 ) -> Vec<u64> {
     let bucket_hours = bucket_hours.max(1);
-    let slots_per_day = (24 + bucket_hours - 1) / bucket_hours; // ceil(24/bucket_hours)
+    let slots_per_day = 24_u32.div_ceil(bucket_hours); // ceil(24/bucket_hours)
     let now = Utc::now();
     let today = now.date_naive();
     let total_days = (today - since_date).num_days().max(0) as usize + 1;
@@ -1495,7 +1503,7 @@ fn build_day_sparkline(
     bucket_days: u32,
     use_cost: bool,
 ) -> Vec<u64> {
-    let bucket_days = bucket_days.max(1) as i64;
+    let bucket_days = i64::from(bucket_days.max(1));
     let today = Utc::now().date_naive();
     let total_days = (today - since_date).num_days().max(0) + 1;
     let num_slots = ((total_days + bucket_days - 1) / bucket_days) as usize; // ceil

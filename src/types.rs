@@ -64,26 +64,26 @@ impl Record {
     /// Generate a string dedup key for cache storage.
     /// Only used during cache insertion, not for in-memory dedup.
     #[must_use]
-    pub fn dedup_key(&self) -> Option<String> {
+    pub fn dedup_key(&self) -> String {
         match (&self.message_id, &self.request_id) {
-            (Some(msg), Some(req)) => Some(format!("{}\0{}", msg, req)),
+            (Some(msg), Some(req)) => format!("{msg}\0{req}"),
             (Some(msg), None) => {
                 let model = self.model.as_deref().unwrap_or("unknown");
-                Some(format!(
+                format!(
                     "{}\0{}\0{}\0{}",
                     msg, model, self.input_tokens, self.output_tokens
-                ))
+                )
             }
             _ => {
                 let model = self.model.as_deref().unwrap_or("unknown");
-                Some(format!(
+                format!(
                     "{}\0{}\0{}\0{}\0{}",
                     self.timestamp.timestamp_millis(),
                     self.provider,
                     model,
                     self.input_tokens,
                     self.output_tokens
-                ))
+                )
             }
         }
     }

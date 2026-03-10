@@ -27,11 +27,11 @@ impl KiloCodeSource {
 }
 
 impl super::Source for KiloCodeSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "kilo-code"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Kilo Code"
     }
 

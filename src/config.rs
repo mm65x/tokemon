@@ -227,7 +227,7 @@ impl Config {
                       #\n\
                       # Changes here affect default behavior.\n\
                       # CLI flags always override config values.\n\n";
-        fs::write(&path, format!("{}{}", header, content))?;
+        fs::write(&path, format!("{header}{content}"))?;
         Ok(path)
     }
 
@@ -248,9 +248,7 @@ impl Config {
     }
 
     pub fn config_path() -> PathBuf {
-        let config_dir = directories::ProjectDirs::from("", "", "tokemon")
-            .map(|d| d.config_dir().to_path_buf())
-            .unwrap_or_else(|| paths::home_dir().join(".config/tokemon"));
+        let config_dir = directories::ProjectDirs::from("", "", "tokemon").map_or_else(|| paths::home_dir().join(".config/tokemon"), |d| d.config_dir().to_path_buf());
         config_dir.join(CONFIG_FILENAME)
     }
 }

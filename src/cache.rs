@@ -42,9 +42,8 @@ impl Cache {
         let mode: String = conn.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
         if mode != "wal" {
             eprintln!(
-                "[tokemon] Warning: requested WAL journal mode but got '{}'; \
-                 writes may be slower",
-                mode
+                "[tokemon] Warning: requested WAL journal mode but got '{mode}'; \
+                 writes may be slower"
             );
         }
 
@@ -182,7 +181,7 @@ impl Cache {
         let mut stmt = self.conn.prepare(&sql)?;
         let entries: Vec<Record> = stmt
             .query_map([], Self::row_to_entry)?
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
         Ok(dedup::deduplicate(entries))
     }
@@ -231,7 +230,7 @@ impl Cache {
         let mut stmt = self.conn.prepare(&sql)?;
         let entries: Vec<Record> = stmt
             .query_map(rusqlite::params_from_iter(param_values), Self::row_to_entry)?
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
         Ok(dedup::deduplicate(entries))
     }
@@ -279,7 +278,7 @@ impl Cache {
                 entry.message_id,
                 entry.request_id,
                 entry.session_id,
-                entry.dedup_key(),
+                Some(entry.dedup_key()),
             ])?;
         }
 
@@ -333,7 +332,7 @@ impl Cache {
                     entry.message_id,
                     entry.request_id,
                     entry.session_id,
-                    entry.dedup_key(),
+                    Some(entry.dedup_key()),
                 ])?;
                 total += 1;
             }
@@ -419,8 +418,7 @@ impl Cache {
                     params![file],
                 ) {
                     eprintln!(
-                        "[tokemon] Warning: failed to preserve entries for {}: {}",
-                        file, e
+                        "[tokemon] Warning: failed to preserve entries for {file}: {e}"
                     );
                 }
             }

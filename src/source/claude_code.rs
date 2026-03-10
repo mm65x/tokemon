@@ -54,11 +54,11 @@ struct ClaudeUsage {
 }
 
 impl super::Source for ClaudeCodeSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "claude-code"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Claude Code"
     }
 
@@ -73,7 +73,7 @@ impl super::Source for ClaudeCodeSource {
         let Ok(projects) = fs::read_dir(&self.base_dir) else {
             return files;
         };
-        for project in projects.filter_map(|e| e.ok()) {
+        for project in projects.filter_map(std::result::Result::ok) {
             let project_path = project.path();
             if !project_path.is_dir() {
                 continue;
@@ -81,7 +81,7 @@ impl super::Source for ClaudeCodeSource {
             let Ok(entries) = fs::read_dir(&project_path) else {
                 continue;
             };
-            for entry in entries.filter_map(|e| e.ok()) {
+            for entry in entries.filter_map(std::result::Result::ok) {
                 let path = entry.path();
                 if path.is_file() && path.extension().is_some_and(|e| e == "jsonl") {
                     files.push(path);
@@ -104,7 +104,7 @@ impl super::Source for ClaudeCodeSource {
 
         let entries = reader
             .lines()
-            .filter_map(|line| line.ok())
+            .map_while(std::result::Result::ok)
             .filter(|line| line.contains("\"assistant\""))
             .filter_map(|line| serde_json::from_str::<ClaudeLine>(&line).ok())
             .filter(|parsed| parsed.line_type.as_deref() == Some("assistant"))
@@ -127,7 +127,7 @@ impl super::Source for ClaudeCodeSource {
                             .as_deref()
                             .is_some_and(|id| id.starts_with("msg_vrtx_")) =>
                     {
-                        Some(format!("vertexai.{}", m))
+                        Some(format!("vertexai.{m}"))
                     }
                     other => other,
                 };

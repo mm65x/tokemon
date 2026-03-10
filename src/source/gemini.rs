@@ -28,7 +28,7 @@ impl JsonSessionSourceConfig for GeminiConfig {
             return files;
         };
         for project in projects
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|e| e.path().is_dir())
         {
             let project_path = project.path();

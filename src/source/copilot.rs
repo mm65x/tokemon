@@ -19,11 +19,11 @@ impl CopilotSource {
 }
 
 impl super::Source for CopilotSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "copilot"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "GitHub Copilot"
     }
 
@@ -52,7 +52,7 @@ impl super::Source for CopilotSource {
                 let Ok(workspaces) = std::fs::read_dir(&ws_storage) else {
                     continue;
                 };
-                for ws in workspaces.filter_map(|e| e.ok()) {
+                for ws in workspaces.filter_map(std::result::Result::ok) {
                     let chat_dir = ws.path().join("chatSessions");
                     if chat_dir.is_dir() {
                         files.extend(super::discover::collect_by_ext(&chat_dir, "json"));

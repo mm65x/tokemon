@@ -1,3 +1,16 @@
+// Pedantic lint suppressions — see lib.rs for rationale.
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    clippy::missing_errors_doc,
+    clippy::must_use_candidate,
+    clippy::struct_excessive_bools,
+    clippy::struct_field_names,
+    clippy::doc_markdown
+)]
+
 use chrono::{Datelike, NaiveDate, Utc};
 use clap::Parser;
 
@@ -32,7 +45,10 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command.as_ref() {
         None => cmd_report(&cli, &config),
-        Some(Commands::Discover) => cmd_discover(),
+        Some(Commands::Discover) => {
+            cmd_discover();
+            Ok(())
+        }
         Some(Commands::Init) => cmd_init(),
         Some(Commands::Statusline) => cmd_statusline(&cli, &config),
         Some(Commands::Budget) => cmd_budget(&cli, &config),
@@ -51,7 +67,7 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn cmd_discover() -> anyhow::Result<()> {
+fn cmd_discover() {
     let registry = SourceSet::new();
 
     let info: Vec<(&str, &str, bool, String, usize)> = registry
@@ -70,7 +86,6 @@ fn cmd_discover() -> anyhow::Result<()> {
         .collect();
 
     render::print_discover(&info);
-    Ok(())
 }
 
 fn cmd_init() -> anyhow::Result<()> {
@@ -97,7 +112,7 @@ fn frequency_since(freq: Frequency) -> NaiveDate {
     match freq {
         Frequency::Daily => today,
         Frequency::Weekly => {
-            today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64)
+            today - chrono::Duration::days(i64::from(today.weekday().num_days_from_monday()))
         }
         Frequency::Monthly => {
             NaiveDate::from_ymd_opt(today.year(), today.month(), 1).unwrap_or(today)
@@ -140,7 +155,7 @@ pub(crate) fn load_and_price(
             Ok(engine) => engine.apply_costs(&mut entries),
             Err(e) => {
                 if !force_offline {
-                    eprintln!("[tokemon] Warning: pricing unavailable: {}", e);
+                    eprintln!("[tokemon] Warning: pricing unavailable: {e}");
                 }
             }
         }
@@ -208,7 +223,7 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     }
 
     let total_cost: f64 = summaries.iter().map(|s| s.total_cost).sum();
-    let total_tokens: u64 = entries.iter().map(|e| e.total_tokens()).sum();
+    let total_tokens: u64 = entries.iter().map(types::Record::total_tokens).sum();
 
     let report = Report {
         period: period.to_string(),
@@ -343,8 +358,7 @@ fn cmd_prune(before: NaiveDate) -> anyhow::Result<()> {
     let cache = Cache::open()?;
     let deleted = cache.prune_before(before)?;
     println!(
-        "Pruned {} preserved entries with timestamps before {}.",
-        deleted, before
+        "Pruned {deleted} preserved entries with timestamps before {before}."
     );
     Ok(())
 }
@@ -358,9 +372,9 @@ fn format_budget_short(spent: f64, limit: f64) -> String {
         0.0
     };
     if pct > 100.0 {
-        format!("OVER ${:.0} limit", limit)
+        format!("OVER ${limit:.0} limit")
     } else {
-        format!("{:.0}%", pct)
+        format!("{pct:.0}%")
     }
 }
 
@@ -368,7 +382,7 @@ fn format_provider_count(count: usize) -> String {
     if count == 1 {
         "1 provider".to_string()
     } else {
-        format!("{} providers", count)
+        format!("{count} providers")
     }
 }
 
@@ -391,8 +405,7 @@ fn parse_with_cache(
         Ok(c) => Some(c),
         Err(e) => {
             eprintln!(
-                "[tokemon] Warning: cache unavailable ({}); parsing all files",
-                e
+                "[tokemon] Warning: cache unavailable ({e}); parsing all files"
             );
             None
         }
@@ -401,7 +414,7 @@ fn parse_with_cache(
     let providers = resolve_source_refs(registry, filter)?;
 
     let Some(ref mut cache) = cache else {
-        return parse_all_directly(&providers);
+        return Ok(parse_all_directly(&providers));
     };
 
     let has_filters = since.is_some() || until.is_some() || !filter.is_empty();
@@ -463,7 +476,15 @@ fn parse_with_cache(
         .collect();
 
     // Parse changed files in parallel, then store in a single transaction
-    if !files_to_parse.is_empty() {
+    if files_to_parse.is_empty() {
+        // No files changed, but update the discovery timestamp so we
+        // don't re-discover on the next invocation within the interval.
+        if let Err(e) = cache.set_last_discovery() {
+            eprintln!(
+                "[tokemon] Warning: failed to update discovery timestamp: {e}"
+            );
+        }
+    } else {
         use rayon::prelude::*;
 
         // Parse in parallel
@@ -491,19 +512,10 @@ fn parse_with_cache(
                     }
                 }
                 Err(e) => {
-                    eprintln!("[tokemon] Warning: cache write failed: {}", e);
+                    eprintln!("[tokemon] Warning: cache write failed: {e}");
                     // Fall through — we'll still load whatever is in the cache
                 }
             }
-        }
-    } else {
-        // No files changed, but update the discovery timestamp so we
-        // don't re-discover on the next invocation within the interval.
-        if let Err(e) = cache.set_last_discovery() {
-            eprintln!(
-                "[tokemon] Warning: failed to update discovery timestamp: {}",
-                e
-            );
         }
     }
 
@@ -535,7 +547,7 @@ fn resolve_source_refs<'a>(
         .collect()
 }
 
-fn parse_all_directly(providers: &[&dyn source::Source]) -> anyhow::Result<Vec<types::Record>> {
+fn parse_all_directly(providers: &[&dyn source::Source]) -> Vec<types::Record> {
     let mut entries = Vec::new();
     for provider in providers {
         match provider.parse_all() {
@@ -545,5 +557,5 @@ fn parse_all_directly(providers: &[&dyn source::Source]) -> anyhow::Result<Vec<t
     }
     entries = dedup::deduplicate(entries);
     entries.sort_by_key(|e| e.timestamp);
-    Ok(entries)
+    entries
 }

@@ -44,11 +44,11 @@ struct TokenUsage {
 }
 
 impl super::Source for CodexSource {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "codex"
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Codex CLI"
     }
 
@@ -72,9 +72,8 @@ impl super::Source for CodexSource {
         let mut current_model: Option<String> = None;
 
         for line in reader.lines() {
-            let line = match line {
-                Ok(l) => l,
-                Err(_) => continue,
+            let Ok(line) = line else {
+                continue;
             };
 
             // Pre-filter: skip lines that are neither turn_context nor event_msg
@@ -82,9 +81,8 @@ impl super::Source for CodexSource {
                 continue;
             }
 
-            let parsed: CodexLine = match serde_json::from_str(&line) {
-                Ok(p) => p,
-                Err(_) => continue,
+            let Ok(parsed) = serde_json::from_str::<CodexLine>(&line) else {
+                continue;
             };
 
             let line_type = match &parsed.line_type {
@@ -102,9 +100,8 @@ impl super::Source for CodexSource {
                     }
                 }
                 "event_msg" => {
-                    let payload = match &parsed.payload {
-                        Some(p) => p,
-                        None => continue,
+                    let Some(payload) = &parsed.payload else {
+                        continue;
                     };
 
                     // Check if this is a token_count event
@@ -113,9 +110,8 @@ impl super::Source for CodexSource {
                         continue;
                     }
 
-                    let info = match payload.get("info") {
-                        Some(i) => i,
-                        None => continue,
+                    let Some(info) = payload.get("info") else {
+                        continue;
                     };
 
                     // Try last_token_usage first, then total_token_usage
@@ -131,13 +127,12 @@ impl super::Source for CodexSource {
                         None => continue,
                     };
 
-                    let timestamp = match parsed
+                    let Some(timestamp) = parsed
                         .timestamp
                         .as_deref()
                         .and_then(timestamp::parse_timestamp)
-                    {
-                        Some(dt) => dt,
-                        None => continue,
+                    else {
+                        continue;
                     };
 
                     let raw_input = usage.input_tokens.unwrap_or(0);

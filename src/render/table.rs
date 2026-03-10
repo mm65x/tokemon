@@ -1,5 +1,3 @@
-use std::io::IsTerminal;
-
 use tabled::builder::Builder;
 use tabled::settings::object::Columns;
 use tabled::settings::{Alignment, Modify, Style};
@@ -8,124 +6,10 @@ use tabled::{Table, Tabled};
 use crate::display;
 use crate::types::{Report, SessionReport};
 
-// ---------------------------------------------------------------------------
-// Color helpers
-// ---------------------------------------------------------------------------
-
-/// Whether to emit ANSI color codes. Respects NO_COLOR and non-TTY pipes.
-#[must_use]
-fn use_color() -> bool {
-    std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none()
-}
-
-fn ansi(code: &str, s: &str, color: bool) -> String {
-    if color {
-        format!("\x1b[{code}m{s}\x1b[0m")
-    } else {
-        s.to_string()
-    }
-}
-
-fn bold(s: &str, c: bool) -> String {
-    ansi("1", s, c)
-}
-fn dim(s: &str, c: bool) -> String {
-    ansi("2", s, c)
-}
-fn cyan_bold(s: &str, c: bool) -> String {
-    ansi("1;36", s, c)
-}
-fn green(s: &str, c: bool) -> String {
-    ansi("32", s, c)
-}
-fn yellow(s: &str, c: bool) -> String {
-    ansi("33", s, c)
-}
-fn red(s: &str, c: bool) -> String {
-    ansi("31", s, c)
-}
-
-/// Format a cost value with color coding.
-fn format_cost_styled(cost: f64, color: bool) -> String {
-    let s = format_cost(cost);
-    if !color {
-        return s;
-    }
-    if cost == 0.0 {
-        dim(&s, true)
-    } else if cost < 1.0 {
-        green(&s, true)
-    } else if cost < 10.0 {
-        yellow(&s, true)
-    } else {
-        red(&s, true)
-    }
-}
-
-/// Format a token count with dim styling for zeros.
-fn format_tokens_styled(n: u64, color: bool) -> String {
-    let s = format_tokens(n);
-    if color && n == 0 {
-        dim(&s, true)
-    } else {
-        s
-    }
-}
-
-/// Apply bold to every element in a row.
-fn bold_row(row: &mut [String], color: bool) {
-    if !color {
-        return;
-    }
-    for cell in row.iter_mut() {
-        if !cell.is_empty() {
-            *cell = bold(cell, true);
-        }
-    }
-}
-
-/// Style each element of the header row.
-fn style_header(header: &mut [String], color: bool) {
-    if !color {
-        return;
-    }
-    for cell in header.iter_mut() {
-        *cell = cyan_bold(cell, true);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Responsive columns
-// ---------------------------------------------------------------------------
-
-/// Terminal width in visible columns.
-#[must_use]
-fn terminal_width() -> usize {
-    terminal_size::terminal_size().map_or(120, |(w, _)| w.0 as usize)
-}
-
-/// Visible width of a string, ignoring ANSI escape codes.
-#[must_use]
-fn display_width(s: &str) -> usize {
-    let mut w = 0;
-    let mut in_escape = false;
-    for c in s.chars() {
-        if in_escape {
-            if c.is_ascii_alphabetic() {
-                in_escape = false;
-            }
-        } else if c == '\x1b' {
-            in_escape = true;
-        } else {
-            w += 1;
-        }
-    }
-    w
-}
-
-// ---------------------------------------------------------------------------
-// Table printing
-// ---------------------------------------------------------------------------
+use super::helpers::{
+    bold_row, display_width, format_cost, format_cost_styled, format_tokens, format_tokens_short,
+    format_tokens_styled, style_header, terminal_width, use_color,
+};
 
 #[derive(Tabled)]
 struct DiscoverRow {
@@ -576,12 +460,12 @@ fn grand_totals(report: &Report) -> (u64, u64, u64, u64, u64) {
     let gcw: u64 = report
         .summaries
         .iter()
-        .map(super::types::DailySummary::total_cache_creation)
+        .map(crate::types::DailySummary::total_cache_creation)
         .sum();
     let gcr: u64 = report
         .summaries
         .iter()
-        .map(super::types::DailySummary::total_cache_read)
+        .map(crate::types::DailySummary::total_cache_read)
         .sum();
     let gth: u64 = report.summaries.iter().map(|s| s.total_thinking).sum();
     (gi, go, gcw, gcr, gi + go + gcw + gcr + gth)
@@ -658,26 +542,6 @@ fn progress_bar(pct: f64, width: usize) -> String {
     format!("{}{}", "#".repeat(filled), "-".repeat(empty))
 }
 
-#[must_use]
-pub fn format_tokens_short(n: u64) -> String {
-    if n >= 1_000_000_000 {
-        format!("{:.1}B", n as f64 / 1e9)
-    } else if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1e6)
-    } else if n >= 1_000 {
-        format!("{:.1}K", n as f64 / 1e3)
-    } else {
-        n.to_string()
-    }
-}
-
-pub fn print_json(report: &Report) {
-    match serde_json::to_string_pretty(report) {
-        Ok(json) => println!("{json}"),
-        Err(e) => eprintln!("[tokemon] Error serializing report: {e}"),
-    }
-}
-
 pub fn print_discover(providers: &[(&str, &str, bool, String, usize)]) {
     let rows: Vec<DiscoverRow> = providers
         .iter()
@@ -697,99 +561,6 @@ pub fn print_discover(providers: &[(&str, &str, bool, String, usize)]) {
 
     let table = Table::new(&rows).with(Style::rounded()).to_string();
     println!("{table}");
-}
-
-fn format_tokens(n: u64) -> String {
-    if n == 0 {
-        return "0".to_string();
-    }
-    let s = n.to_string();
-    let mut result = String::with_capacity(s.len() + s.len() / 3);
-    for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push(',');
-        }
-        result.push(c);
-    }
-    result.chars().rev().collect()
-}
-
-// ---------------------------------------------------------------------------
-// CSV output
-// ---------------------------------------------------------------------------
-
-fn csv_quote(s: &str) -> String {
-    if s.contains(',') || s.contains('"') || s.contains('\n') || s.contains('\r') {
-        format!("\"{}\"", s.replace('"', "\"\""))
-    } else {
-        s.to_string()
-    }
-}
-
-pub fn print_csv_compact(report: &Report) {
-    println!("date,input,output,cache_write,cache_read,thinking,total_tokens,cost");
-    for s in &report.summaries {
-        let total = s.total_input + s.total_output + s.total_cache() + s.total_thinking;
-        println!(
-            "{},{},{},{},{},{},{},{:.2}",
-            csv_quote(&s.label),
-            s.total_input,
-            s.total_output,
-            s.total_cache_creation(),
-            s.total_cache_read(),
-            s.total_thinking,
-            total,
-            s.total_cost
-        );
-    }
-}
-
-pub fn print_csv_breakdown(report: &Report) {
-    println!("date,model,api_provider,client,input,output,cache_write,cache_read,thinking,total_tokens,cost");
-    for s in &report.summaries {
-        for m in &s.models {
-            let model_total = m.total_tokens();
-            println!(
-                "{},{},{},{},{},{},{},{},{},{},{:.2}",
-                csv_quote(&s.label),
-                csv_quote(&display::display_model(&m.model)),
-                csv_quote(display::infer_api_provider(m.effective_raw_model())),
-                csv_quote(&display::display_client(&m.provider)),
-                m.input_tokens,
-                m.output_tokens,
-                m.cache_creation_tokens,
-                m.cache_read_tokens,
-                m.thinking_tokens,
-                model_total,
-                m.cost_usd
-            );
-        }
-    }
-}
-
-pub fn print_csv_sessions(report: &SessionReport) {
-    println!("session_id,date,client,model,input,output,cache_write,cache_read,thinking,total_tokens,cost");
-    for s in &report.sessions {
-        let sid = if s.session_id.len() > 8 {
-            &s.session_id[..8]
-        } else {
-            &s.session_id
-        };
-        println!(
-            "{},{},{},{},{},{},{},{},{},{},{:.2}",
-            csv_quote(sid),
-            s.date.format("%Y-%m-%d"),
-            csv_quote(&s.client),
-            csv_quote(&s.dominant_model),
-            s.input_tokens,
-            s.output_tokens,
-            s.cache_creation_tokens,
-            s.cache_read_tokens,
-            s.thinking_tokens,
-            s.total_tokens,
-            s.cost
-        );
-    }
 }
 
 pub fn print_sessions_table(report: &SessionReport) {
@@ -846,50 +617,12 @@ pub fn print_sessions_table(report: &SessionReport) {
     println!("{table}");
 }
 
-pub fn print_sessions_json(report: &SessionReport) {
-    match serde_json::to_string_pretty(report) {
-        Ok(json) => println!("{json}"),
-        Err(e) => eprintln!("[tokemon] Error serializing sessions: {e}"),
-    }
-}
-
-/// Format a USD cost value for display.
-///
-/// Rounds to 4 decimal places first (avoids float jitter in live TUI),
-/// then selects precision based on magnitude:
-/// - `$0.00` for zero
-/// - `$0.0012` (4dp) for values under 1 cent
-/// - `$123` (0dp) for values >= $100
-/// - `$1.23` (2dp) for everything else
-#[must_use]
-pub fn format_cost(cost: f64) -> String {
-    let rounded = (cost * 10_000.0).round() / 10_000.0;
-    if rounded == 0.0 {
-        "$0.00".to_string()
-    } else if rounded < 0.01 {
-        format!("${rounded:.4}")
-    } else if rounded >= 100.0 {
-        format!("${rounded:.0}")
-    } else {
-        format!("${rounded:.2}")
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_tokens() {
-        assert_eq!(format_tokens(0), "0");
-        assert_eq!(format_tokens(123), "123");
-        assert_eq!(format_tokens(1234), "1,234");
-        assert_eq!(format_tokens(1234567), "1,234,567");
-    }
+    use crate::display;
 
     #[test]
     fn test_display_model() {
-        use crate::display;
         assert_eq!(
             display::display_model("claude-opus-4-1-20250805"),
             "opus-4-1"
@@ -912,63 +645,5 @@ mod tests {
             "gemini-2.5-flash"
         );
         assert_eq!(display::display_model("openai/gpt-4o"), "gpt-4o");
-    }
-
-    #[test]
-    fn test_format_cost() {
-        assert_eq!(format_cost(0.0), "$0.00");
-        assert_eq!(format_cost(1.50), "$1.50");
-        assert_eq!(format_cost(0.005), "$0.0050");
-    }
-
-    #[test]
-    fn test_use_color_does_not_panic() {
-        // Just ensure it runs without panicking in test context
-        let _ = use_color();
-    }
-
-    #[test]
-    fn test_format_cost_styled_no_color() {
-        // Without color, should return plain string
-        assert_eq!(format_cost_styled(0.0, false), "$0.00");
-        assert_eq!(format_cost_styled(1.50, false), "$1.50");
-    }
-
-    #[test]
-    fn test_format_tokens_styled_no_color() {
-        assert_eq!(format_tokens_styled(0, false), "0");
-        assert_eq!(format_tokens_styled(1234, false), "1,234");
-    }
-
-    #[test]
-    fn test_csv_quote_plain() {
-        assert_eq!(csv_quote("hello"), "hello");
-        assert_eq!(csv_quote("2026-02-20"), "2026-02-20");
-    }
-
-    #[test]
-    fn test_csv_quote_with_comma() {
-        assert_eq!(csv_quote("hello, world"), "\"hello, world\"");
-    }
-
-    #[test]
-    fn test_csv_quote_with_quotes() {
-        assert_eq!(csv_quote("say \"hi\""), "\"say \"\"hi\"\"\"");
-    }
-
-    #[test]
-    fn test_csv_quote_with_newline() {
-        assert_eq!(csv_quote("line1\nline2"), "\"line1\nline2\"");
-    }
-
-    #[test]
-    fn test_csv_quote_with_carriage_return() {
-        assert_eq!(csv_quote("line1\r\nline2"), "\"line1\r\nline2\"");
-        assert_eq!(csv_quote("text\r"), "\"text\r\"");
-    }
-
-    #[test]
-    fn test_csv_quote_empty() {
-        assert_eq!(csv_quote(""), "");
     }
 }

@@ -169,13 +169,16 @@ fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<
                 ..Default::default()
             });
 
-            mu.input_tokens += entry.input_tokens;
-            mu.output_tokens += entry.output_tokens;
-            mu.cache_read_tokens += entry.cache_read_tokens;
-            mu.cache_creation_tokens += entry.cache_creation_tokens;
-            mu.thinking_tokens += entry.thinking_tokens;
-            mu.cost_usd += entry.cost_usd.unwrap_or(0.0);
-            mu.request_count += 1;
+            mu.accumulate(&ModelUsage {
+                input_tokens: entry.input_tokens,
+                output_tokens: entry.output_tokens,
+                cache_read_tokens: entry.cache_read_tokens,
+                cache_creation_tokens: entry.cache_creation_tokens,
+                thinking_tokens: entry.thinking_tokens,
+                cost_usd: entry.cost_usd.unwrap_or(0.0),
+                request_count: 1,
+                ..Default::default()
+            });
         }
 
         let models: Vec<ModelUsage> = model_map.into_values().collect();

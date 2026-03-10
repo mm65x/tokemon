@@ -7,12 +7,99 @@ use crate::paths;
 
 const CONFIG_FILENAME: &str = "config.toml";
 
+/// Default subcommand when none is specified on the CLI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DefaultCommand {
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+impl DefaultCommand {
+    /// Cycle to the next value (used by the TUI settings editor).
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Daily => Self::Weekly,
+            Self::Weekly => Self::Monthly,
+            Self::Monthly => Self::Daily,
+        }
+    }
+}
+
+impl std::fmt::Display for DefaultCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Daily => f.write_str("daily"),
+            Self::Weekly => f.write_str("weekly"),
+            Self::Monthly => f.write_str("monthly"),
+        }
+    }
+}
+
+/// Sort order for CLI table output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfigSortOrder {
+    Asc,
+    Desc,
+}
+
+impl ConfigSortOrder {
+    /// Cycle to the next value (used by the TUI settings editor).
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Asc => Self::Desc,
+            Self::Desc => Self::Asc,
+        }
+    }
+}
+
+impl std::fmt::Display for ConfigSortOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Asc => f.write_str("asc"),
+            Self::Desc => f.write_str("desc"),
+        }
+    }
+}
+
+/// Which metric to use for sparkline trendlines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SparklineMetric {
+    Tokens,
+    Cost,
+}
+
+impl SparklineMetric {
+    /// Cycle to the next value (used by the TUI settings editor).
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Tokens => Self::Cost,
+            Self::Cost => Self::Tokens,
+        }
+    }
+}
+
+impl std::fmt::Display for SparklineMetric {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Tokens => f.write_str("tokens"),
+            Self::Cost => f.write_str("cost"),
+        }
+    }
+}
+
 /// User configuration for tokemon
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
-    /// Default subcommand when none specified: "daily", "weekly", "monthly"
-    pub default_command: String,
+    /// Default subcommand when none specified
+    pub default_command: DefaultCommand,
 
     /// Default output format: "table" or "json"
     pub default_format: String,
@@ -32,8 +119,8 @@ pub struct Config {
     /// Column visibility settings
     pub columns: ColumnConfig,
 
-    /// Sort order: "asc" (oldest first) or "desc" (newest first)
-    pub sort_order: String,
+    /// Sort order for CLI table output
+    pub sort_order: ConfigSortOrder,
 
     /// Always re-discover files (ignore cache freshness)
     pub refresh: bool,
@@ -50,8 +137,8 @@ pub struct Config {
     /// Show sparkline trendlines in summary cards
     pub show_sparklines: bool,
 
-    /// Sparkline metric: "tokens" or "cost"
-    pub sparkline_metric: String,
+    /// Sparkline metric for trendlines
+    pub sparkline_metric: SparklineMetric,
 
     /// Today sparkline bucket size in minutes (default: 10)
     pub today_bucket_mins: u64,
@@ -95,20 +182,20 @@ pub struct ColumnConfig {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            default_command: "daily".to_string(),
+            default_command: DefaultCommand::Daily,
             default_format: "table".to_string(),
             breakdown: false,
             no_cost: false,
             offline: false,
             providers: Vec::new(),
             columns: ColumnConfig::default(),
-            sort_order: "asc".to_string(),
+            sort_order: ConfigSortOrder::Asc,
             refresh: false,
             reparse: false,
             budget: BudgetConfig::default(),
             tick_interval: 0,
             show_sparklines: true,
-            sparkline_metric: "tokens".to_string(),
+            sparkline_metric: SparklineMetric::Tokens,
             today_bucket_mins: 10,
             week_bucket_hours: 4,
             month_bucket_days: 1,
@@ -153,20 +240,13 @@ impl Config {
         }
     }
 
-    /// Validate config values, replacing invalid ones with defaults
+    /// Validate config values, replacing invalid ones with defaults.
+    ///
+    /// `default_command`, `sort_order`, and `sparkline_metric` are enums
+    /// with `#[serde(rename_all = "lowercase")]`, so invalid TOML values
+    /// are caught at deserialization time and never reach this method.
     fn validated(mut self) -> Self {
         let defaults = Self::default();
-
-        if !matches!(
-            self.default_command.as_str(),
-            "daily" | "weekly" | "monthly"
-        ) {
-            eprintln!(
-                "[tokemon] Warning: invalid default_command '{}'; using '{}'",
-                self.default_command, defaults.default_command
-            );
-            self.default_command = defaults.default_command;
-        }
 
         if !matches!(self.default_format.as_str(), "table" | "json") {
             eprintln!(
@@ -174,22 +254,6 @@ impl Config {
                 self.default_format, defaults.default_format
             );
             self.default_format = defaults.default_format;
-        }
-
-        if !matches!(self.sort_order.as_str(), "asc" | "desc") {
-            eprintln!(
-                "[tokemon] Warning: invalid sort_order '{}'; using '{}'",
-                self.sort_order, defaults.sort_order
-            );
-            self.sort_order = defaults.sort_order;
-        }
-
-        if !matches!(self.sparkline_metric.as_str(), "tokens" | "cost") {
-            eprintln!(
-                "[tokemon] Warning: invalid sparkline_metric '{}'; using '{}'",
-                self.sparkline_metric, defaults.sparkline_metric
-            );
-            self.sparkline_metric = defaults.sparkline_metric;
         }
 
         // Clamp bucket sizes to sensible ranges

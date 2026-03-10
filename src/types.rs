@@ -131,6 +131,18 @@ impl ModelUsage {
             &self.raw_model
         }
     }
+
+    /// Add all numeric fields from `other` into `self`.
+    /// Used to aggregate multiple `ModelUsage` entries into one.
+    pub fn accumulate(&mut self, other: &Self) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_read_tokens += other.cache_read_tokens;
+        self.cache_creation_tokens += other.cache_creation_tokens;
+        self.thinking_tokens += other.thinking_tokens;
+        self.cost_usd += other.cost_usd;
+        self.request_count += other.request_count;
+    }
 }
 
 /// Summary for a time period (day, week, or month)

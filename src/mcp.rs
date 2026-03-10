@@ -192,6 +192,11 @@ fn handle_tools_call(id: &Value, request: &Value, cli: &Cli, config: &Config) ->
     }
 }
 
+// MCP tool handlers use `Result<String, String>` intentionally: the MCP
+// protocol returns errors as plain-text `"isError": true` content blocks,
+// so structured error types would be immediately serialized to strings
+// anyway. Converting via `.map_err(|e| e.to_string())` is the correct
+// boundary between internal `anyhow::Error` and the MCP wire format.
 fn tool_usage_today(cli: &Cli, config: &Config) -> Result<String, String> {
     let today = chrono::Utc::now().date_naive();
     let entries = crate::pipeline::load_and_price(cli, config, true, Some(today), None)

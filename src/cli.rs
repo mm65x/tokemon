@@ -93,7 +93,7 @@ impl Cli {
         match self.order {
             Some(SortOrder::Desc) => true,
             Some(SortOrder::Asc) => false,
-            None => config.sort_order == "desc",
+            None => config.sort_order == crate::config::ConfigSortOrder::Desc,
         }
     }
 }

@@ -179,10 +179,17 @@ impl Cache {
             Self::ENTRY_COLUMNS
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let entries: Vec<Record> = stmt
-            .query_map([], Self::row_to_entry)?
-            .filter_map(std::result::Result::ok)
-            .collect();
+        let mut entries = Vec::new();
+        let mut skipped = 0u64;
+        for row in stmt.query_map([], Self::row_to_entry)? {
+            match row {
+                Ok(record) => entries.push(record),
+                Err(_) => skipped += 1,
+            }
+        }
+        if skipped > 0 {
+            eprintln!("[tokemon] Warning: skipped {skipped} cached entries with parse errors");
+        }
         Ok(dedup::deduplicate(entries))
     }
 
@@ -228,10 +235,17 @@ impl Cache {
         );
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let entries: Vec<Record> = stmt
-            .query_map(rusqlite::params_from_iter(param_values), Self::row_to_entry)?
-            .filter_map(std::result::Result::ok)
-            .collect();
+        let mut entries = Vec::new();
+        let mut skipped = 0u64;
+        for row in stmt.query_map(rusqlite::params_from_iter(param_values), Self::row_to_entry)? {
+            match row {
+                Ok(record) => entries.push(record),
+                Err(_) => skipped += 1,
+            }
+        }
+        if skipped > 0 {
+            eprintln!("[tokemon] Warning: skipped {skipped} cached entries with parse errors");
+        }
         Ok(dedup::deduplicate(entries))
     }
 

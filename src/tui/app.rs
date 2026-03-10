@@ -281,10 +281,10 @@ impl SettingField {
                 }
             }
             Self::NoCost => if config.no_cost { "Yes" } else { "No" }.to_string(),
-            Self::DefaultCommand => config.default_command.clone(),
-            Self::SortOrder => config.sort_order.clone(),
+            Self::DefaultCommand => config.default_command.to_string(),
+            Self::SortOrder => config.sort_order.to_string(),
             Self::ShowSparklines => if config.show_sparklines { "Yes" } else { "No" }.to_string(),
-            Self::SparklineMetric => config.sparkline_metric.clone(),
+            Self::SparklineMetric => config.sparkline_metric.to_string(),
             Self::TodayBucketMins => config.today_bucket_mins.to_string(),
             Self::WeekBucketHours => config.week_bucket_hours.to_string(),
             Self::MonthBucketDays => config.month_bucket_days.to_string(),
@@ -324,23 +324,13 @@ impl SettingField {
     pub fn cycle_enum(self, config: &mut Config) {
         match self {
             Self::DefaultCommand => {
-                config.default_command = match config.default_command.as_str() {
-                    "daily" => "weekly".to_string(),
-                    "weekly" => "monthly".to_string(),
-                    _ => "daily".to_string(),
-                };
+                config.default_command = config.default_command.next();
             }
             Self::SortOrder => {
-                config.sort_order = match config.sort_order.as_str() {
-                    "asc" => "desc".to_string(),
-                    _ => "asc".to_string(),
-                };
+                config.sort_order = config.sort_order.next();
             }
             Self::SparklineMetric => {
-                config.sparkline_metric = match config.sparkline_metric.as_str() {
-                    "tokens" => "cost".to_string(),
-                    _ => "tokens".to_string(),
-                };
+                config.sparkline_metric = config.sparkline_metric.next();
             }
             _ => {}
         }
@@ -948,7 +938,7 @@ impl App {
             }
             KeyCode::Char('W') => {
                 // Save to disk
-                let old_metric = self.config.sparkline_metric.clone();
+                let old_metric = self.config.sparkline_metric;
                 match self.settings_state.draft.save() {
                     Ok(()) => {
                         self.config = self.settings_state.draft.clone();
@@ -1004,7 +994,7 @@ impl App {
             .sum();
 
         // Build weekly sparkline from historical records.
-        let use_cost = self.config.sparkline_metric == "cost";
+        let use_cost = self.config.sparkline_metric == crate::config::SparklineMetric::Cost;
         let (sparkline, start_week) = build_weekly_sparkline_data(&historical, use_cost);
         self.all_time_base_sparkline = sparkline;
         self.all_time_base_start_week = start_week;
@@ -1147,7 +1137,7 @@ impl App {
 
     fn recompute_cards(&mut self) {
         let today = Utc::now().date_naive();
-        let use_cost = self.config.sparkline_metric == "cost";
+        let use_cost = self.config.sparkline_metric == crate::config::SparklineMetric::Cost;
 
         // Today card
         let today_records: Vec<&Record> = self
@@ -1355,13 +1345,7 @@ fn aggregate_summaries_to_models(summaries: &[DailySummary], group_by: GroupBy) 
                     ..Default::default()
                 },
             });
-            entry.input_tokens += mu.input_tokens;
-            entry.output_tokens += mu.output_tokens;
-            entry.cache_read_tokens += mu.cache_read_tokens;
-            entry.cache_creation_tokens += mu.cache_creation_tokens;
-            entry.thinking_tokens += mu.thinking_tokens;
-            entry.cost_usd += mu.cost_usd;
-            entry.request_count += mu.request_count;
+            entry.accumulate(mu);
         }
     }
 
@@ -1381,13 +1365,7 @@ fn merge_model_usages(base: &[ModelUsage], window: &[ModelUsage]) -> Vec<ModelUs
             provider: mu.provider.clone(),
             ..Default::default()
         });
-        entry.input_tokens += mu.input_tokens;
-        entry.output_tokens += mu.output_tokens;
-        entry.cache_read_tokens += mu.cache_read_tokens;
-        entry.cache_creation_tokens += mu.cache_creation_tokens;
-        entry.thinking_tokens += mu.thinking_tokens;
-        entry.cost_usd += mu.cost_usd;
-        entry.request_count += mu.request_count;
+        entry.accumulate(mu);
     }
 
     map.into_values().collect()

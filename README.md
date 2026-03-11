@@ -13,19 +13,9 @@
 
 ---
 
-Unified token usage tracking across all your AI coding tools. tokemon reads local session logs from 16 providers, estimates costs via LiteLLM pricing, and presents daily, weekly, or monthly reports in the terminal or as JSON.
+Unified token usage tracking across all your AI coding tools. `tokemon top` provides a live, continuously updating dashboard of your token usage and costs across 16 different providers. It reads local session logs, estimates costs via LiteLLM pricing, and presents beautiful TUI monitoring, static reports, or raw JSON.
 
-```
-╭────────────┬─────────┬─────────┬─────────────┬───────────────┬───────────────┬──────────╮
-│ Date       │   Input │  Output │ Cache Write │    Cache Read │  Total Tokens │     Cost │
-├────────────┼─────────┼─────────┼─────────────┼───────────────┼───────────────┼──────────┤
-│ 2026-02-20 │ 363,489 │ 151,776 │  25,842,224 │   391,480,542 │   417,838,031 │  $485.59 │
-│ 2026-02-21 │ 305,260 │ 266,882 │  25,424,702 │   551,464,876 │   577,461,720 │  $733.72 │
-│ 2026-02-22 │ 317,451 │ 218,759 │  40,516,730 │   644,994,151 │   686,047,091 │  $877.50 │
-│ ...        │         │         │             │               │               │          │
-│ TOTAL      │ 986,200 │ 637,417 │  91,783,656 │ 1,587,939,569 │ 1,681,346,842 │ $2096.81 │
-╰────────────┴─────────┴─────────┴─────────────┴───────────────┴───────────────┴──────────╯
-```
+![tokemon dashboard](assets/dashboard.png)
 
 ## Highlights
 
@@ -83,18 +73,21 @@ cargo install --path .
 ## Quick Start
 
 ```bash
+# Launch the live monitoring dashboard (default view: today)
+tokemon top
+
 # See which providers are installed
 tokemon discover
 
-# Daily usage report (default)
-tokemon
+# Daily static usage report
+tokemon report
 
 # Per-model breakdown view
-tokemon -d breakdown
+tokemon report -d breakdown
 
 # Weekly or monthly report
-tokemon -f weekly
-tokemon -f monthly --json
+tokemon report -f weekly
+tokemon report -f monthly --json
 
 # Budget overview
 tokemon budget
@@ -113,9 +106,11 @@ tokemon statusline -f weekly
 ## Usage
 
 ```
-tokemon [OPTIONS] [COMMAND]
+tokemon [OPTIONS] <COMMAND>
 
 Commands:
+  top          Live monitoring dashboard
+  report       Generate a static usage report (table, json, or csv)
   statusline   Compact one-line output for shell prompts and status bars
   budget       Show spending vs configured limits
   sessions     Show per-session cost breakdown

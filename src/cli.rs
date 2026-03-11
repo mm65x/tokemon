@@ -25,7 +25,7 @@ pub enum SortOrder {
 )]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<Commands>,
+    pub command: Commands,
 
     /// Aggregation frequency: daily, weekly, or monthly
     #[arg(short = 'f', long, global = true, value_enum, default_value = "daily")]
@@ -110,6 +110,8 @@ pub enum Frequency {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Generate a static usage report (table, json, or csv)
+    Report,
     /// Compact one-line output for shell prompts and status bars
     Statusline,
     /// Show budget progress against configured limits

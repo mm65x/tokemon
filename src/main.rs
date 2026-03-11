@@ -43,19 +43,19 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = Config::load();
 
-    match cli.command.as_ref() {
-        None => cmd_report(&cli, &config),
-        Some(Commands::Discover) => {
+    match &cli.command {
+        Commands::Report => cmd_report(&cli, &config),
+        Commands::Discover => {
             cmd_discover();
             Ok(())
         }
-        Some(Commands::Init) => cmd_init(),
-        Some(Commands::Statusline) => cmd_statusline(&cli, &config),
-        Some(Commands::Budget) => cmd_budget(&cli, &config),
-        Some(Commands::Sessions { top }) => cmd_sessions(&cli, &config, *top),
-        Some(Commands::Prune { before }) => cmd_prune(*before),
-        Some(Commands::Mcp) => mcp::run(&cli, &config),
-        Some(Commands::Top { view, interval }) => {
+        Commands::Init => cmd_init(),
+        Commands::Statusline => cmd_statusline(&cli, &config),
+        Commands::Budget => cmd_budget(&cli, &config),
+        Commands::Sessions { top } => cmd_sessions(&cli, &config, *top),
+        Commands::Prune { before } => cmd_prune(*before),
+        Commands::Mcp => mcp::run(&cli, &config),
+        Commands::Top { view, interval } => {
             // CLI --interval overrides config, config overrides hardcoded default
             let tick = if *interval > 0 {
                 *interval

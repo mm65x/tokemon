@@ -88,7 +88,7 @@ fn run_watcher(event_tx: &mpsc::UnboundedSender<Event>) -> anyhow::Result<()> {
 
                 if has_changes {
                     // Re-parse changed files and update the cache
-                    if let Err(e) = incremental_update(&registry) {
+                    if let Err(e) = incremental_update(&registry, event_tx) {
                         warn(event_tx, format!("Incremental update failed: {e}"));
                     }
 
@@ -117,7 +117,10 @@ fn run_watcher(event_tx: &mpsc::UnboundedSender<Event>) -> anyhow::Result<()> {
 /// This mirrors the logic in `main.rs::parse_with_cache` but is designed
 /// to run from a background thread. It only re-parses files whose
 /// modification time has changed since the last cache write.
-fn incremental_update(registry: &SourceSet) -> anyhow::Result<()> {
+fn incremental_update(
+    registry: &SourceSet,
+    event_tx: &mpsc::UnboundedSender<Event>,
+) -> anyhow::Result<()> {
     let mut cache = cache::Cache::open()?;
     let cached_mtimes = cache.cached_file_mtimes()?;
 
@@ -156,7 +159,7 @@ fn incremental_update(registry: &SourceSet) -> anyhow::Result<()> {
             Err(e) => {
                 // Log but continue — don't let one bad file block others.
                 // This will be reported via Event::Warning by the caller.
-                eprintln!("[tokemon] Warning: failed to parse {}: {e}", file.display());
+                warn(event_tx, format!("failed to parse {}: {e}", file.display()));
             }
         }
     }

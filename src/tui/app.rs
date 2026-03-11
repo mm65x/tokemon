@@ -288,13 +288,23 @@ impl App {
         // cached pricing.json). If the cache doesn't exist yet (fresh
         // install), fall back to a one-time online fetch.
         if !config.no_cost {
-            app.pricing = cost::PricingEngine::load(true).ok();
-            if app
-                .pricing
-                .as_ref()
-                .is_some_and(cost::PricingEngine::is_empty)
-            {
-                app.pricing = cost::PricingEngine::load(false).ok();
+            match cost::PricingEngine::load(true) {
+                Ok(engine) => {
+                    if engine.is_empty() {
+                        match cost::PricingEngine::load(false) {
+                            Ok(online_engine) => app.pricing = Some(online_engine),
+                            Err(e) => {
+                                app.last_warning =
+                                    Some((format!("Pricing unavailable: {e}"), Instant::now()));
+                            }
+                        }
+                    } else {
+                        app.pricing = Some(engine);
+                    }
+                }
+                Err(e) => {
+                    app.last_warning = Some((format!("Pricing unavailable: {e}"), Instant::now()));
+                }
             }
         }
         // Compute all-time base from historical records (before the

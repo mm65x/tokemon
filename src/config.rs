@@ -319,3 +319,89 @@ impl Config {
         config_dir.join(CONFIG_FILENAME)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert_eq!(config.default_command, DefaultCommand::Daily);
+        assert_eq!(config.default_format, "table");
+        assert!(!config.breakdown);
+        assert!(!config.no_cost);
+        assert!(!config.offline);
+        assert!(config.providers.is_empty());
+        assert_eq!(config.sort_order, ConfigSortOrder::Asc);
+        assert!(!config.refresh);
+        assert!(!config.reparse);
+        assert_eq!(config.tick_interval, 0);
+        assert!(config.show_sparklines);
+        assert_eq!(config.sparkline_metric, SparklineMetric::Tokens);
+        assert_eq!(config.today_bucket_mins, 10);
+        assert_eq!(config.week_bucket_hours, 4);
+        assert_eq!(config.month_bucket_days, 1);
+
+        assert!(config.columns.date);
+        assert!(config.columns.model);
+        assert!(config.columns.api_provider);
+        assert!(config.columns.client);
+        assert!(config.columns.input);
+        assert!(config.columns.output);
+        assert!(config.columns.cache_write);
+        assert!(config.columns.cache_read);
+        assert!(config.columns.total_tokens);
+        assert!(config.columns.cost);
+
+        assert!(config.budget.daily.is_none());
+        assert!(config.budget.weekly.is_none());
+        assert!(config.budget.monthly.is_none());
+    }
+
+    #[test]
+    fn test_default_command_enum() {
+        assert_eq!(DefaultCommand::Daily.next(), DefaultCommand::Weekly);
+        assert_eq!(DefaultCommand::Weekly.next(), DefaultCommand::Monthly);
+        assert_eq!(DefaultCommand::Monthly.next(), DefaultCommand::Daily);
+
+        assert_eq!(DefaultCommand::Daily.to_string(), "daily");
+        assert_eq!(DefaultCommand::Weekly.to_string(), "weekly");
+        assert_eq!(DefaultCommand::Monthly.to_string(), "monthly");
+    }
+
+    #[test]
+    fn test_config_sort_order_enum() {
+        assert_eq!(ConfigSortOrder::Asc.next(), ConfigSortOrder::Desc);
+        assert_eq!(ConfigSortOrder::Desc.next(), ConfigSortOrder::Asc);
+
+        assert_eq!(ConfigSortOrder::Asc.to_string(), "asc");
+        assert_eq!(ConfigSortOrder::Desc.to_string(), "desc");
+    }
+
+    #[test]
+    fn test_sparkline_metric_enum() {
+        assert_eq!(SparklineMetric::Tokens.next(), SparklineMetric::Cost);
+        assert_eq!(SparklineMetric::Cost.next(), SparklineMetric::Tokens);
+
+        assert_eq!(SparklineMetric::Tokens.to_string(), "tokens");
+        assert_eq!(SparklineMetric::Cost.to_string(), "cost");
+    }
+
+    #[test]
+    fn test_config_validated() {
+        let mut config = Config::default();
+        config.default_format = "invalid".to_string();
+        config.today_bucket_mins = 0;
+        config.week_bucket_hours = 25;
+        config.month_bucket_days = 8;
+        config.tick_interval = 400;
+
+        let validated = config.validated();
+        assert_eq!(validated.default_format, "table"); // Reset to default
+        assert_eq!(validated.today_bucket_mins, 10);
+        assert_eq!(validated.week_bucket_hours, 4);
+        assert_eq!(validated.month_bucket_days, 1);
+        assert_eq!(validated.tick_interval, 300); // Clamped to 300
+    }
+}

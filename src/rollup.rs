@@ -264,3 +264,158 @@ fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<
 
     summaries
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{GroupBy, ModelUsage, Record};
+    use chrono::{NaiveDate, TimeZone, Utc};
+    use std::borrow::Cow;
+
+    fn make_record(
+        timestamp_sec: i64,
+        model: &str,
+        provider: &str,
+        input: u64,
+        output: u64,
+    ) -> Record {
+        Record {
+            timestamp: Utc.timestamp_opt(timestamp_sec, 0).unwrap(),
+            provider: Cow::Owned(provider.to_string()),
+            model: Some(model.to_string()),
+            input_tokens: input,
+            output_tokens: output,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            thinking_tokens: 0,
+            cost_usd: Some(0.1),
+            message_id: None,
+            request_id: None,
+            session_id: None,
+        }
+    }
+
+    #[test]
+    fn test_aggregate_daily() {
+        // Records on two different days
+        // Day 1: 2023-01-01T00:00:00Z (1672531200)
+        // Day 2: 2023-01-02T00:00:00Z (1672617600)
+        let r1 = make_record(1672531200, "model-a", "prov-a", 10, 20); // Day 1
+        let r2 = make_record(1672534800, "model-a", "prov-a", 15, 25); // Day 1
+        let r3 = make_record(1672617600, "model-b", "prov-b", 100, 200); // Day 2
+
+        let summaries = aggregate_daily(&[r1, r2, r3]);
+        assert_eq!(summaries.len(), 2);
+
+        // Check Day 1
+        let day1 = summaries
+            .iter()
+            .find(|s| s.date == NaiveDate::from_ymd_opt(2023, 1, 1).unwrap())
+            .unwrap();
+        assert_eq!(day1.total_input, 25);
+        assert_eq!(day1.total_output, 45);
+        assert_eq!(day1.total_requests, 2);
+        assert_eq!(day1.models.len(), 1);
+        assert_eq!(day1.models[0].model, "model-a");
+
+        // Check Day 2
+        let day2 = summaries
+            .iter()
+            .find(|s| s.date == NaiveDate::from_ymd_opt(2023, 1, 2).unwrap())
+            .unwrap();
+        assert_eq!(day2.total_input, 100);
+        assert_eq!(day2.total_requests, 1);
+        assert_eq!(day2.models.len(), 1);
+    }
+
+    #[test]
+    fn test_merge_model_usages() {
+        let mu1 = ModelUsage {
+            model: "m1".to_string(),
+            raw_model: "raw-m1".to_string(),
+            provider: "p1".to_string(),
+            input_tokens: 10,
+            ..Default::default()
+        };
+        let mu2 = ModelUsage {
+            model: "m2".to_string(),
+            raw_model: "raw-m2".to_string(),
+            provider: "p1".to_string(),
+            input_tokens: 20,
+            ..Default::default()
+        };
+        let mu3 = ModelUsage {
+            // matches mu1 key
+            model: "m1".to_string(),
+            raw_model: "raw-m1".to_string(),
+            provider: "p1".to_string(),
+            input_tokens: 30,
+            ..Default::default()
+        };
+
+        let base = vec![mu1.clone(), mu2.clone()];
+        let window = vec![mu3.clone()];
+
+        let merged = merge_model_usages(&base, &window);
+        assert_eq!(merged.len(), 2);
+
+        let m1_merged = merged.iter().find(|m| m.model == "m1").unwrap();
+        assert_eq!(m1_merged.input_tokens, 40); // 10 + 30
+
+        let m2_merged = merged.iter().find(|m| m.model == "m2").unwrap();
+        assert_eq!(m2_merged.input_tokens, 20);
+    }
+
+    #[test]
+    fn test_aggregate_summaries_to_models() {
+        let mu1 = ModelUsage {
+            model: "m1".to_string(),
+            raw_model: "raw-m1".to_string(),
+            provider: "p1".to_string(),
+            input_tokens: 10,
+            ..Default::default()
+        };
+        let mu2 = ModelUsage {
+            model: "m1".to_string(),
+            raw_model: "raw-m1".to_string(),
+            provider: "p2".to_string(), // different provider, same model
+            input_tokens: 20,
+            ..Default::default()
+        };
+        let mu3 = ModelUsage {
+            model: "m2".to_string(),
+            raw_model: "raw-m2".to_string(),
+            provider: "p1".to_string(),
+            input_tokens: 30,
+            ..Default::default()
+        };
+
+        let summary = DailySummary {
+            date: NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+            label: "test".to_string(),
+            models: vec![mu1, mu2, mu3],
+            total_input: 60,
+            total_output: 0,
+            total_thinking: 0,
+            total_cost: 0.0,
+            total_requests: 3,
+        };
+        let summaries = vec![summary];
+
+        // GroupBy::Model
+        let by_model = aggregate_summaries_to_models(&summaries, GroupBy::Model);
+        assert_eq!(by_model.len(), 2); // m1 and m2
+        let m1_agg = by_model.iter().find(|m| m.model == "m1").unwrap();
+        assert_eq!(m1_agg.input_tokens, 30); // p1 (10) + p2 (20)
+
+        // GroupBy::ModelClient
+        let by_model_client = aggregate_summaries_to_models(&summaries, GroupBy::ModelClient);
+        assert_eq!(by_model_client.len(), 3); // m1+p1, m1+p2, m2+p1
+
+        // GroupBy::Client
+        let by_client = aggregate_summaries_to_models(&summaries, GroupBy::Client);
+        assert_eq!(by_client.len(), 2); // p1 and p2
+        let p1_agg = by_client.iter().find(|m| m.provider == "p1").unwrap();
+        assert_eq!(p1_agg.input_tokens, 40); // m1 (10) + m2 (30)
+    }
+}

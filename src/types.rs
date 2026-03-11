@@ -245,3 +245,135 @@ impl GroupBy {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn test_record_total_tokens() {
+        let record = Record {
+            timestamp: Utc::now(),
+            provider: "test".into(),
+            model: None,
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_read_tokens: 5,
+            cache_creation_tokens: 15,
+            thinking_tokens: 50,
+            cost_usd: None,
+            message_id: None,
+            request_id: None,
+            session_id: None,
+        };
+        assert_eq!(record.total_tokens(), 100);
+    }
+
+    #[test]
+    fn test_record_dedup_hash() {
+        let mut r1 = Record {
+            timestamp: Utc.timestamp_opt(1000, 0).unwrap(),
+            provider: "test".into(),
+            model: Some("m1".into()),
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            thinking_tokens: 0,
+            cost_usd: None,
+            message_id: Some("msg1".into()),
+            request_id: Some("req1".into()),
+            session_id: None,
+        };
+        
+        let mut r2 = r1.clone();
+        assert_eq!(r1.dedup_hash(), r2.dedup_hash());
+
+        // Different request ID should change hash when both are present
+        r2.request_id = Some("req2".into());
+        assert_ne!(r1.dedup_hash(), r2.dedup_hash());
+
+        // Message ID only
+        r1.request_id = None;
+        r2.request_id = None;
+        assert_eq!(r1.dedup_hash(), r2.dedup_hash());
+        
+        // No IDs
+        r1.message_id = None;
+        r2.message_id = None;
+        assert_eq!(r1.dedup_hash(), r2.dedup_hash());
+        
+        // Changing content without IDs changes hash
+        r2.input_tokens = 11;
+        assert_ne!(r1.dedup_hash(), r2.dedup_hash());
+    }
+
+    #[test]
+    fn test_model_usage_accumulate() {
+        let mut u1 = ModelUsage {
+            model: "m1".into(),
+            raw_model: "vertexai.m1".into(),
+            provider: "vertexai".into(),
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_read_tokens: 5,
+            cache_creation_tokens: 2,
+            thinking_tokens: 1,
+            cost_usd: 1.0,
+            request_count: 1,
+        };
+
+        let u2 = ModelUsage {
+            model: "m1".into(),
+            raw_model: "".into(),
+            provider: "vertexai".into(),
+            input_tokens: 100,
+            output_tokens: 200,
+            cache_read_tokens: 50,
+            cache_creation_tokens: 20,
+            thinking_tokens: 10,
+            cost_usd: 10.0,
+            request_count: 5,
+        };
+
+        u1.accumulate(&u2);
+
+        assert_eq!(u1.input_tokens, 110);
+        assert_eq!(u1.output_tokens, 220);
+        assert_eq!(u1.cache_read_tokens, 55);
+        assert_eq!(u1.cache_creation_tokens, 22);
+        assert_eq!(u1.thinking_tokens, 11);
+        assert_eq!(u1.total_tokens(), 418);
+        assert_eq!(u1.cost_usd, 11.0);
+        assert_eq!(u1.request_count, 6);
+    }
+
+    #[test]
+    fn test_model_usage_effective_raw_model() {
+        let u1 = ModelUsage {
+            model: "m1".into(),
+            raw_model: "vertexai.m1".into(),
+            ..Default::default()
+        };
+        assert_eq!(u1.effective_raw_model(), "vertexai.m1");
+
+        let u2 = ModelUsage {
+            model: "m1".into(),
+            raw_model: "".into(),
+            ..Default::default()
+        };
+        assert_eq!(u2.effective_raw_model(), "m1");
+    }
+
+    #[test]
+    fn test_group_by_enum() {
+        assert_eq!(GroupBy::Model.next(), GroupBy::ModelClient);
+        assert_eq!(GroupBy::ModelClient.next(), GroupBy::Client);
+        assert_eq!(GroupBy::Client.next(), GroupBy::Model);
+
+        assert_eq!(GroupBy::Model.label(), "model");
+        assert_eq!(GroupBy::ModelClient.label(), "model+client");
+        assert_eq!(GroupBy::Client.label(), "client");
+    }
+}

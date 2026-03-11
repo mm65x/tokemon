@@ -57,8 +57,8 @@ fn sum_cost_since(entries: &[Record], since: NaiveDate) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Duration, Utc};
     use crate::types::Record;
+    use chrono::{Duration, Utc};
 
     fn create_dummy_record(cost: f64, offset_days: i64) -> Record {
         Record {
@@ -110,10 +110,7 @@ mod tests {
     #[test]
     fn test_evaluate_all_budgets() {
         // Records placed today to guarantee they fall into current week/month
-        let entries = vec![
-            create_dummy_record(10.0, 0),
-            create_dummy_record(5.0, 0),
-        ];
+        let entries = vec![create_dummy_record(10.0, 0), create_dummy_record(5.0, 0)];
         let budget = BudgetConfig {
             daily: Some(20.0),
             weekly: Some(100.0),
@@ -132,10 +129,7 @@ mod tests {
 
     #[test]
     fn test_sum_cost_since() {
-        let entries = vec![
-            create_dummy_record(1.0, 0),
-            create_dummy_record(2.0, 0),
-        ];
+        let entries = vec![create_dummy_record(1.0, 0), create_dummy_record(2.0, 0)];
         let since_today = timestamp::start_of_today();
         assert_eq!(sum_cost_since(&entries, since_today), 3.0);
     }

@@ -286,7 +286,7 @@ mod tests {
             request_id: Some("req1".into()),
             session_id: None,
         };
-        
+
         let mut r2 = r1.clone();
         assert_eq!(r1.dedup_hash(), r2.dedup_hash());
 
@@ -298,12 +298,12 @@ mod tests {
         r1.request_id = None;
         r2.request_id = None;
         assert_eq!(r1.dedup_hash(), r2.dedup_hash());
-        
+
         // No IDs
         r1.message_id = None;
         r2.message_id = None;
         assert_eq!(r1.dedup_hash(), r2.dedup_hash());
-        
+
         // Changing content without IDs changes hash
         r2.input_tokens = 11;
         assert_ne!(r1.dedup_hash(), r2.dedup_hash());

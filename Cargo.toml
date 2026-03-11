@@ -1,6 +1,6 @@
 [package]
 name = "tokemon"
-version = "0.2.0-alpha.1"
+version = "0.2.0-alpha.2"
 edition = "2021"
 description = "Unified LLM token usage tracking across all providers"
 license = "MIT"

@@ -8,7 +8,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::config::Config;
 use crate::render::{self, format_tokens_short};
 use crate::source::SourceSet;
-use crate::types::{PeriodSummary, GroupBy, ModelUsage, Record};
+use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record};
 use crate::{cache, cost, dedup, rollup};
 
 use super::diff::{self, RowKey};

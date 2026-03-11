@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::{Datelike, NaiveDate};
 
 use crate::display;
-use crate::types::{PeriodSummary, GroupBy, ModelUsage, Record, SessionSummary};
+use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record, SessionSummary};
 
 /// Group entries by date, then by model within each date
 pub fn aggregate_daily(entries: &[Record]) -> Vec<PeriodSummary> {

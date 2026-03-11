@@ -230,7 +230,9 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         match freq {
             Frequency::Daily => status.daily.map(|b| format_budget_short(b.spent, b.limit)),
             Frequency::Weekly => status.weekly.map(|b| format_budget_short(b.spent, b.limit)),
-            Frequency::Monthly => status.monthly.map(|b| format_budget_short(b.spent, b.limit)),
+            Frequency::Monthly => status
+                .monthly
+                .map(|b| format_budget_short(b.spent, b.limit)),
         }
     } else {
         None
@@ -331,5 +333,3 @@ fn format_provider_count(count: usize) -> String {
         format!("{count} providers")
     }
 }
-
-

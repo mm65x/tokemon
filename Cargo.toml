@@ -44,7 +44,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 terminal_size = "0.4"
 
 # HTTP (for pricing data fetch)
-ureq = "2"
+ureq = { version = "2", default-features = false, features = ["tls", "native-certs", "json"] }
 
 # TUI (tokemon top)
 ratatui = { version = "0.30", features = ["crossterm"] }

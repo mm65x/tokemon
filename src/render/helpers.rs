@@ -143,7 +143,7 @@ pub fn style_header(header: &mut [String], color: bool) {
 /// Terminal width in visible columns.
 #[must_use]
 pub fn terminal_width() -> usize {
-    terminal_size::terminal_size().map_or(120, |(w, _)| w.0 as usize)
+    crossterm::terminal::size().map_or(120, |(w, _)| w as usize)
 }
 
 /// Visible width of a string, ignoring ANSI escape codes.

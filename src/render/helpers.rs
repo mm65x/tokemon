@@ -95,23 +95,23 @@ fn ansi(code: &str, s: &str, color: bool) -> String {
     }
 }
 
-pub fn bold(s: &str, c: bool) -> String {
-    ansi("1", s, c)
+pub fn bold(s: &str, color: bool) -> String {
+    ansi("1", s, color)
 }
-pub fn dim(s: &str, c: bool) -> String {
-    ansi("2", s, c)
+pub fn dim(s: &str, color: bool) -> String {
+    ansi("2", s, color)
 }
-pub fn cyan_bold(s: &str, c: bool) -> String {
-    ansi("1;36", s, c)
+pub fn cyan_bold(s: &str, color: bool) -> String {
+    ansi("1;36", s, color)
 }
-pub fn green(s: &str, c: bool) -> String {
-    ansi("32", s, c)
+pub fn green(s: &str, color: bool) -> String {
+    ansi("32", s, color)
 }
-pub fn yellow(s: &str, c: bool) -> String {
-    ansi("33", s, c)
+pub fn yellow(s: &str, color: bool) -> String {
+    ansi("33", s, color)
 }
-pub fn red(s: &str, c: bool) -> String {
-    ansi("31", s, c)
+pub fn red(s: &str, color: bool) -> String {
+    ansi("31", s, color)
 }
 
 /// Apply bold to every element in a row.

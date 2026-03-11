@@ -17,39 +17,47 @@ use crate::types;
 
 const REDISCOVERY_INTERVAL_SECS: u64 = 30;
 
-/// Resolve which providers to use: CLI `--provider` flags override config defaults.
-pub fn resolve_providers<'a>(cli: &'a Cli, config: &'a Config) -> &'a [String] {
-    if cli.providers.is_empty() {
-        &config.providers
-    } else {
-        &cli.providers
+#[derive(Debug, Clone, Default)]
+pub struct PipelineOptions {
+    pub providers: Vec<String>,
+    pub since: Option<NaiveDate>,
+    pub until: Option<NaiveDate>,
+    pub no_cost: bool,
+    pub offline: bool,
+    pub refresh: bool,
+    pub reparse: bool,
+}
+
+impl PipelineOptions {
+    #[must_use]
+    pub fn from_cli_config(cli: &Cli, config: &Config) -> Self {
+        Self {
+            providers: if cli.providers.is_empty() {
+                config.providers.clone()
+            } else {
+                cli.providers.clone()
+            },
+            since: cli.since,
+            until: cli.until,
+            no_cost: cli.no_cost || config.no_cost,
+            offline: cli.offline || config.offline,
+            refresh: cli.refresh || config.refresh,
+            reparse: cli.reparse || config.reparse,
+        }
     }
 }
 
 /// Load usage entries from all matching providers, parse via cache, and
 /// optionally apply pricing.
 pub fn load_and_price(
-    cli: &Cli,
-    config: &Config,
+    opts: &PipelineOptions,
     force_offline: bool,
-    since: Option<NaiveDate>,
-    until: Option<NaiveDate>,
 ) -> anyhow::Result<Vec<types::Record>> {
     let registry = SourceSet::new();
-    let filter = resolve_providers(cli, config);
-    let force_refresh = cli.refresh || config.refresh;
-    let force_reparse = cli.reparse || config.reparse;
-    let mut entries = parse_with_cache(
-        &registry,
-        filter,
-        force_refresh,
-        force_reparse,
-        since,
-        until,
-    )?;
+    let mut entries = parse_with_cache(&registry, opts)?;
 
-    if !(cli.no_cost || config.no_cost) {
-        let offline = force_offline || cli.offline || config.offline;
+    if !opts.no_cost {
+        let offline = force_offline || opts.offline;
         match cost::PricingEngine::load(offline) {
             Ok(engine) => engine.apply_costs(&mut entries),
             Err(e) => {
@@ -70,11 +78,7 @@ pub fn load_and_price(
 /// 4. Load everything from cache in one bulk query
 fn parse_with_cache(
     registry: &SourceSet,
-    filter: &[String],
-    force_refresh: bool,
-    force_reparse: bool,
-    since: Option<NaiveDate>,
-    until: Option<NaiveDate>,
+    opts: &PipelineOptions,
 ) -> anyhow::Result<Vec<types::Record>> {
     let mut cache = match Cache::open() {
         Ok(c) => Some(c),
@@ -84,18 +88,18 @@ fn parse_with_cache(
         }
     };
 
-    let providers = resolve_source_refs(registry, filter)?;
+    let providers = resolve_source_refs(registry, &opts.providers)?;
 
     let Some(ref mut cache) = cache else {
         return Ok(parse_all_directly(&providers));
     };
 
-    let has_filters = since.is_some() || until.is_some() || !filter.is_empty();
+    let has_filters = opts.since.is_some() || opts.until.is_some() || !opts.providers.is_empty();
 
     // If cache is fresh and no --refresh/--reparse flag, skip discovery entirely
-    if !force_refresh && !force_reparse && !cache.should_rediscover(REDISCOVERY_INTERVAL_SECS) {
+    if !opts.refresh && !opts.reparse && !cache.should_rediscover(REDISCOVERY_INTERVAL_SECS) {
         let mut entries = if has_filters {
-            cache.load_entries_filtered(since, until, filter)?
+            cache.load_entries_filtered(opts.since, opts.until, &opts.providers)?
         } else {
             cache.load_all_entries()?
         };
@@ -105,7 +109,7 @@ fn parse_with_cache(
     }
 
     // When --reparse, ignore cached mtimes so every file gets re-parsed
-    let cached_mtimes = if force_reparse {
+    let cached_mtimes = if opts.reparse {
         std::collections::HashMap::new()
     } else {
         cache.cached_file_mtimes().unwrap_or_default()
@@ -130,7 +134,7 @@ fn parse_with_cache(
     // Mark entries from deleted files as preserved (only when discovering all providers,
     // otherwise we'd incorrectly mark entries from non-filtered providers).
     // Best-effort: log a warning if it fails rather than aborting the pipeline.
-    if filter.is_empty() {
+    if opts.providers.is_empty() {
         if let Err(e) = cache.mark_preserved(&discovered_files) {
             eprintln!("[tokemon] Warning: failed to mark preserved entries: {e}");
         }
@@ -194,7 +198,7 @@ fn parse_with_cache(
     }
 
     let mut entries = if has_filters {
-        cache.load_entries_filtered(since, until, filter)?
+        cache.load_entries_filtered(opts.since, opts.until, &opts.providers)?
     } else {
         cache.load_all_entries()?
     };

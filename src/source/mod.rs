@@ -34,7 +34,7 @@ pub trait Source: Send + Sync {
     /// Human-readable: "Claude Code", "Codex CLI", "Gemini CLI"
     fn display_name(&self) -> &'static str;
 
-    /// Return the base data directory for display purposes
+    /// Get the absolute path to the base data directory
     fn data_dir(&self) -> PathBuf;
 
     /// Return all data files for this provider on this machine
@@ -42,11 +42,6 @@ pub trait Source: Send + Sync {
 
     /// Parse one file into usage entries
     fn parse_file(&self, path: &Path) -> Result<Vec<Record>>;
-
-    /// Whether this provider has any data
-    fn is_available(&self) -> bool {
-        !self.discover_files().is_empty()
-    }
 
     /// Parse all files in parallel with dedup.
     ///
@@ -105,7 +100,7 @@ impl SourceSet {
     pub fn available(&self) -> Vec<&dyn Source> {
         self.providers
             .iter()
-            .filter(|p| p.is_available())
+            .filter(|p| !p.discover_files().is_empty())
             .map(std::convert::AsRef::as_ref)
             .collect()
     }

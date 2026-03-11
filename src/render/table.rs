@@ -460,12 +460,12 @@ fn grand_totals(report: &Report) -> (u64, u64, u64, u64, u64) {
     let gcw: u64 = report
         .summaries
         .iter()
-        .map(crate::types::DailySummary::total_cache_creation)
+        .map(crate::types::PeriodSummary::total_cache_creation)
         .sum();
     let gcr: u64 = report
         .summaries
         .iter()
-        .map(crate::types::DailySummary::total_cache_read)
+        .map(crate::types::PeriodSummary::total_cache_read)
         .sum();
     let gth: u64 = report.summaries.iter().map(|s| s.total_thinking).sum();
     (gi, go, gcw, gcr, gi + go + gcw + gcr + gth)

@@ -8,7 +8,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::config::Config;
 use crate::render::{self, format_tokens_short};
 use crate::source::SourceSet;
-use crate::types::{DailySummary, GroupBy, ModelUsage, Record};
+use crate::types::{PeriodSummary, GroupBy, ModelUsage, Record};
 use crate::{cache, cost, dedup, rollup};
 
 use super::diff::{self, RowKey};
@@ -154,7 +154,7 @@ pub struct App {
     pub detail_total_tokens: u64,
     pub detail_total_requests: u64,
     /// Historical summaries (populated when `show_history` is true).
-    pub history_summaries: Vec<DailySummary>,
+    pub history_summaries: Vec<PeriodSummary>,
     /// Scroll offset for the detail table.
     pub scroll_offset: u16,
     /// Whether the app should quit.

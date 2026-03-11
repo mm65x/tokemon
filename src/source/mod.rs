@@ -48,7 +48,11 @@ pub trait Source: Send + Sync {
         !self.discover_files().is_empty()
     }
 
-    /// Parse all files in parallel with dedup
+    /// Parse all files in parallel with dedup.
+    ///
+    /// Handles individual file errors by logging a warning and continuing.
+    /// Returns a `Result` only for fatal, unrecoverable errors (none currently
+    /// implemented by the default).
     fn parse_all(&self) -> Result<Vec<Record>> {
         let files = self.discover_files();
         let all: Vec<Record> = files

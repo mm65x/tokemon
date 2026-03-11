@@ -251,8 +251,7 @@ impl Cache {
 
     /// Remove stale entries for a file and store new ones.
     ///
-    /// Used by `write_entries` (via the `Transaction` API) and directly
-    /// in tests. Production code should prefer `write_entries`.
+    /// Used directly by parsers to store single-file results.
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn store_file_entries(
         &self,

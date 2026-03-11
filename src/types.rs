@@ -147,7 +147,7 @@ impl ModelUsage {
 
 /// Summary for a time period (day, week, or month)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DailySummary {
+pub struct PeriodSummary {
     pub date: NaiveDate,
     pub label: String,
     pub models: Vec<ModelUsage>,
@@ -158,7 +158,7 @@ pub struct DailySummary {
     pub total_requests: u64,
 }
 
-impl DailySummary {
+impl PeriodSummary {
     #[must_use]
     pub fn total_cache_creation(&self) -> u64 {
         self.models.iter().map(|m| m.cache_creation_tokens).sum()
@@ -181,7 +181,7 @@ pub struct Report {
     pub period: String,
     pub generated_at: DateTime<Utc>,
     pub providers_found: Vec<String>,
-    pub summaries: Vec<DailySummary>,
+    pub summaries: Vec<PeriodSummary>,
     pub total_cost: f64,
     pub total_tokens: u64,
 }

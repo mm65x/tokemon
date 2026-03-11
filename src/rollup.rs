@@ -3,10 +3,10 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::{Datelike, NaiveDate};
 
 use crate::display;
-use crate::types::{DailySummary, GroupBy, ModelUsage, Record, SessionSummary};
+use crate::types::{PeriodSummary, GroupBy, ModelUsage, Record, SessionSummary};
 
 /// Group entries by date, then by model within each date
-pub fn aggregate_daily(entries: &[Record]) -> Vec<DailySummary> {
+pub fn aggregate_daily(entries: &[Record]) -> Vec<PeriodSummary> {
     let grouped = group_by_date(entries, |e| {
         let date = e.timestamp.date_naive();
         (date, date.format("%Y-%m-%d").to_string())
@@ -15,7 +15,7 @@ pub fn aggregate_daily(entries: &[Record]) -> Vec<DailySummary> {
 }
 
 /// Group entries by ISO week
-pub fn aggregate_weekly(entries: &[Record]) -> Vec<DailySummary> {
+pub fn aggregate_weekly(entries: &[Record]) -> Vec<PeriodSummary> {
     let grouped = group_by_date(entries, |e| {
         let date = e.timestamp.date_naive();
         let iso = date.iso_week();
@@ -37,7 +37,7 @@ pub fn aggregate_weekly(entries: &[Record]) -> Vec<DailySummary> {
 }
 
 /// Group entries by month
-pub fn aggregate_monthly(entries: &[Record]) -> Vec<DailySummary> {
+pub fn aggregate_monthly(entries: &[Record]) -> Vec<PeriodSummary> {
     let grouped = group_by_date(entries, |e| {
         let date = e.timestamp.date_naive();
         let first = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap_or(date);
@@ -146,11 +146,11 @@ where
     grouped
 }
 
-/// Aggregate `DailySummary` model usages into a flat `Vec<ModelUsage>`
+/// Aggregate `PeriodSummary` model usages into a flat `Vec<ModelUsage>`
 /// grouped by the selected `GroupBy` mode. Used by both `recompute_detail`
 /// and `compute_all_time_base`.
 pub fn aggregate_summaries_to_models(
-    summaries: &[DailySummary],
+    summaries: &[PeriodSummary],
     group_by: GroupBy,
 ) -> Vec<ModelUsage> {
     let mut model_map: HashMap<(String, String), ModelUsage> = HashMap::new();
@@ -207,7 +207,7 @@ pub fn merge_model_usages(base: &[ModelUsage], window: &[ModelUsage]) -> Vec<Mod
     map.into_values().collect()
 }
 
-fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<DailySummary> {
+fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<PeriodSummary> {
     let mut summaries = Vec::new();
 
     for (date, (label, entries)) in grouped {
@@ -250,7 +250,7 @@ fn build_summaries(grouped: BTreeMap<NaiveDate, (String, Vec<&Record>)>) -> Vec<
         let total_cost: f64 = models.iter().map(|m| m.cost_usd).sum();
         let total_requests: u64 = models.iter().map(|m| m.request_count).sum();
 
-        summaries.push(DailySummary {
+        summaries.push(PeriodSummary {
             date,
             label,
             models,
@@ -390,7 +390,7 @@ mod tests {
             ..Default::default()
         };
 
-        let summary = DailySummary {
+        let summary = PeriodSummary {
             date: NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
             label: "test".to_string(),
             models: vec![mu1, mu2, mu3],

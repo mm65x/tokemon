@@ -20,9 +20,7 @@ pub fn run(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let mut stdout = io::stdout();
 
     for line in stdin.lock().lines() {
-        let Ok(line) = line else {
-            break;
-        };
+        let line = line?;
 
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -199,8 +197,14 @@ fn handle_tools_call(id: &Value, request: &Value, cli: &Cli, config: &Config) ->
 // boundary between internal `anyhow::Error` and the MCP wire format.
 fn tool_usage_today(cli: &Cli, config: &Config) -> Result<String, String> {
     let today = chrono::Utc::now().date_naive();
-    let entries = crate::pipeline::load_and_price(&crate::pipeline::PipelineOptions { since: Some(today), ..crate::pipeline::PipelineOptions::from_cli_config(cli, config) }, true)
-        .map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(
+        &crate::pipeline::PipelineOptions {
+            since: Some(today),
+            ..crate::pipeline::PipelineOptions::from_cli_config(cli, config)
+        },
+        true,
+    )
+    .map_err(|e| e.to_string())?;
     let mut total_tokens = 0u64;
     let mut total_cost = 0.0f64;
 
@@ -221,17 +225,32 @@ fn tool_usage_today(cli: &Cli, config: &Config) -> Result<String, String> {
 }
 
 fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String, String> {
-    let since = args
-        .get("since")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<chrono::NaiveDate>().ok());
-    let until = args
-        .get("until")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<chrono::NaiveDate>().ok());
+    let since = if let Some(v) = args.get("since").and_then(|v| v.as_str()) {
+        Some(
+            v.parse::<chrono::NaiveDate>()
+                .map_err(|_| format!("Invalid date format for 'since': {v}"))?,
+        )
+    } else {
+        None
+    };
+    let until = if let Some(v) = args.get("until").and_then(|v| v.as_str()) {
+        Some(
+            v.parse::<chrono::NaiveDate>()
+                .map_err(|_| format!("Invalid date format for 'until': {v}"))?,
+        )
+    } else {
+        None
+    };
 
-    let entries = crate::pipeline::load_and_price(&crate::pipeline::PipelineOptions { since, until, ..crate::pipeline::PipelineOptions::from_cli_config(cli, config) }, true)
-        .map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(
+        &crate::pipeline::PipelineOptions {
+            since,
+            until,
+            ..crate::pipeline::PipelineOptions::from_cli_config(cli, config)
+        },
+        true,
+    )
+    .map_err(|e| e.to_string())?;
 
     let entries = rollup::filter_by_date(entries, since, until);
 
@@ -262,8 +281,15 @@ fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String,
 }
 
 fn tool_budget_status(cli: &Cli, config: &Config) -> Result<String, String> {
-    let entries = crate::pipeline::load_and_price(&crate::pipeline::PipelineOptions { since: None, until: None, ..crate::pipeline::PipelineOptions::from_cli_config(cli, config) }, true)
-        .map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(
+        &crate::pipeline::PipelineOptions {
+            since: None,
+            until: None,
+            ..crate::pipeline::PipelineOptions::from_cli_config(cli, config)
+        },
+        true,
+    )
+    .map_err(|e| e.to_string())?;
     let status = crate::pacemaker::evaluate(&entries, &config.budget);
 
     let to_json = |bp: &crate::pacemaker::BudgetPeriod| {
@@ -289,8 +315,15 @@ fn tool_session_cost(cli: &Cli, config: &Config, args: &Value) -> Result<String,
         .and_then(|v| v.as_str())
         .ok_or_else(|| "session_id is required".to_string())?;
 
-    let entries = crate::pipeline::load_and_price(&crate::pipeline::PipelineOptions { since: None, until: None, ..crate::pipeline::PipelineOptions::from_cli_config(cli, config) }, true)
-        .map_err(|e| e.to_string())?;
+    let entries = crate::pipeline::load_and_price(
+        &crate::pipeline::PipelineOptions {
+            since: None,
+            until: None,
+            ..crate::pipeline::PipelineOptions::from_cli_config(cli, config)
+        },
+        true,
+    )
+    .map_err(|e| e.to_string())?;
     let sessions = rollup::aggregate_by_session(&entries);
 
     let matched: Vec<_> = sessions

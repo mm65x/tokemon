@@ -18,7 +18,7 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn open() -> anyhow::Result<Self> {
+    pub fn open() -> crate::error::Result<Self> {
         let db_path = Self::db_path();
         if let Some(parent) = db_path.parent() {
             fs::create_dir_all(parent)?;
@@ -60,7 +60,7 @@ impl Cache {
         paths::cache_dir().join(DB_FILENAME)
     }
 
-    fn init_schema(&self) -> anyhow::Result<()> {
+    fn init_schema(&self) -> crate::error::Result<()> {
         // Create tables with individual statements so failures are isolated
         // and provide clear error messages.
         self.conn.execute(
@@ -133,7 +133,7 @@ impl Cache {
 
     /// Verify the database is actually writable by doing a round-trip
     /// write/read/delete to `cache_meta`.
-    fn verify_writable(&self) -> anyhow::Result<()> {
+    fn verify_writable(&self) -> crate::error::Result<()> {
         self.conn.execute(
             "INSERT OR REPLACE INTO cache_meta (key, value) VALUES ('_write_test', '1')",
             [],
@@ -143,17 +143,20 @@ impl Cache {
             [],
             |row| row.get(0),
         )?;
-        anyhow::ensure!(
-            val == "1",
-            "cache write verification failed: read back '{val}'"
-        );
+        if val != "1" {
+            return Err(crate::error::TokemonError::Cache(format!(
+                "cache write verification failed: read back '{val}'"
+            )));
+        }
         self.conn
             .execute("DELETE FROM cache_meta WHERE key = '_write_test'", [])?;
         Ok(())
     }
 
     /// Get all cached (file, mtime) pairs in one query for bulk staleness checking.
-    pub fn cached_file_mtimes(&self) -> anyhow::Result<std::collections::HashMap<String, i64>> {
+    pub fn cached_file_mtimes(
+        &self,
+    ) -> crate::error::Result<std::collections::HashMap<String, i64>> {
         let mut map = std::collections::HashMap::new();
         let mut stmt = self.conn.prepare(
             "SELECT source_file, MAX(source_mtime) FROM usage_entries GROUP BY source_file",
@@ -173,7 +176,7 @@ impl Cache {
         cost_usd, message_id, request_id, session_id";
 
     /// Load ALL cached entries in one query.
-    pub fn load_all_entries(&self) -> anyhow::Result<Vec<Record>> {
+    pub fn load_all_entries(&self) -> crate::error::Result<Vec<Record>> {
         let sql = format!(
             "SELECT {} FROM usage_entries ORDER BY timestamp",
             Self::ENTRY_COLUMNS
@@ -199,7 +202,7 @@ impl Cache {
         since: Option<NaiveDate>,
         until: Option<NaiveDate>,
         providers: &[String],
-    ) -> anyhow::Result<Vec<Record>> {
+    ) -> crate::error::Result<Vec<Record>> {
         let mut conditions: Vec<String> = Vec::new();
         let mut param_values: Vec<Value> = Vec::new();
 
@@ -258,7 +261,7 @@ impl Cache {
         path: &Path,
         mtime_secs: i64,
         entries: &[Record],
-    ) -> anyhow::Result<()> {
+    ) -> crate::error::Result<()> {
         let path_str = path.display().to_string();
 
         self.conn.execute(
@@ -304,7 +307,10 @@ impl Cache {
     /// semantics. On success, also updates the discovery timestamp.
     ///
     /// Returns the total number of entries written.
-    pub fn write_entries(&mut self, files: &[(&Path, i64, Vec<Record>)]) -> anyhow::Result<usize> {
+    pub fn write_entries(
+        &mut self,
+        files: &[(&Path, i64, Vec<Record>)],
+    ) -> crate::error::Result<usize> {
         if files.is_empty() {
             return Ok(0);
         }
@@ -393,7 +399,7 @@ impl Cache {
     }
 
     /// Record the current time as the last discovery timestamp.
-    pub fn set_last_discovery(&self) -> anyhow::Result<()> {
+    pub fn set_last_discovery(&self) -> crate::error::Result<()> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -410,7 +416,7 @@ impl Cache {
     pub fn mark_preserved(
         &self,
         discovered_files: &std::collections::HashSet<String>,
-    ) -> anyhow::Result<()> {
+    ) -> crate::error::Result<()> {
         if discovered_files.is_empty() {
             return Ok(());
         }
@@ -434,7 +440,7 @@ impl Cache {
     }
 
     /// Delete preserved entries with timestamps before the given date.
-    pub fn prune_before(&self, before: NaiveDate) -> anyhow::Result<usize> {
+    pub fn prune_before(&self, before: NaiveDate) -> crate::error::Result<usize> {
         let before_str = before.to_string();
         let deleted = self.conn.execute(
             "DELETE FROM usage_entries WHERE preserved = 1 AND timestamp < ?1",

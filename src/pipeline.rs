@@ -52,7 +52,7 @@ impl PipelineOptions {
 pub fn load_and_price(
     opts: &PipelineOptions,
     force_offline: bool,
-) -> anyhow::Result<Vec<types::Record>> {
+) -> crate::error::Result<Vec<types::Record>> {
     let registry = SourceSet::new();
     let mut entries = parse_with_cache(&registry, opts)?;
 
@@ -79,7 +79,7 @@ pub fn load_and_price(
 fn parse_with_cache(
     registry: &SourceSet,
     opts: &PipelineOptions,
-) -> anyhow::Result<Vec<types::Record>> {
+) -> crate::error::Result<Vec<types::Record>> {
     let mut cache = match Cache::open() {
         Ok(c) => Some(c),
         Err(e) => {
@@ -210,7 +210,7 @@ fn parse_with_cache(
 fn resolve_source_refs<'a>(
     registry: &'a SourceSet,
     filter: &[String],
-) -> anyhow::Result<Vec<&'a dyn source::Source>> {
+) -> crate::error::Result<Vec<&'a dyn source::Source>> {
     if filter.is_empty() {
         return Ok(registry.available());
     }
@@ -220,7 +220,7 @@ fn resolve_source_refs<'a>(
         .map(|name| {
             registry
                 .get(name)
-                .ok_or_else(|| error::TokemonError::ProviderNotFound(name.clone()).into())
+                .ok_or_else(|| error::TokemonError::ProviderNotFound(name.clone()))
         })
         .collect()
 }

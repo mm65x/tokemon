@@ -19,6 +19,9 @@ pub enum TokemonError {
 
     #[error("Pricing error: {0}")]
     Pricing(String),
+
+    #[error("Cache error: {0}")]
+    Cache(String),
 }
 
 pub type Result<T> = std::result::Result<T, TokemonError>;

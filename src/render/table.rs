@@ -542,21 +542,19 @@ fn progress_bar(pct: f64, width: usize) -> String {
     format!("{}{}", "#".repeat(filled), "-".repeat(empty))
 }
 
-pub fn print_discover(providers: &[(&str, &str, bool, String, usize)]) {
+pub fn print_discover(providers: &[crate::types::ProviderInfo]) {
     let rows: Vec<DiscoverRow> = providers
         .iter()
-        .map(
-            |(name, display, available, data_dir, file_count)| DiscoverRow {
-                provider: format!("{display} ({name})"),
-                status: if *available {
-                    "Found".to_string()
-                } else {
-                    "None".to_string()
-                },
-                data_dir: data_dir.clone(),
-                files: format_tokens(*file_count as u64),
+        .map(|info| DiscoverRow {
+            provider: format!("{} ({})", info.display_name, info.name),
+            status: if info.available {
+                "Found".to_string()
+            } else {
+                "None".to_string()
             },
-        )
+            data_dir: info.data_dir.clone(),
+            files: format_tokens(info.file_count as u64),
+        })
         .collect();
 
     let table = Table::new(&rows).with(Style::rounded()).to_string();

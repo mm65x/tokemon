@@ -3,6 +3,16 @@ use std::borrow::Cow;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
+/// Information about a discovered usage provider
+#[derive(Debug, Clone)]
+pub struct ProviderInfo {
+    pub name: String,
+    pub display_name: String,
+    pub available: bool,
+    pub data_dir: String,
+    pub file_count: usize,
+}
+
 /// A single usage entry from any provider
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Record {

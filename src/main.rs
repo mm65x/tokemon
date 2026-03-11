@@ -70,7 +70,7 @@ fn main() -> anyhow::Result<()> {
 fn cmd_discover() {
     let registry = SourceSet::new();
 
-    let info: Vec<(&str, &str, bool, String, usize)> = registry
+    let info: Vec<crate::types::ProviderInfo> = registry
         .all()
         .iter()
         .map(|p| {
@@ -81,7 +81,13 @@ fn cmd_discover() {
             } else {
                 0
             };
-            (p.name(), p.display_name(), available, data_dir, file_count)
+            crate::types::ProviderInfo {
+                name: p.name().to_string(),
+                display_name: p.display_name().to_string(),
+                available,
+                data_dir,
+                file_count,
+            }
         })
         .collect();
 

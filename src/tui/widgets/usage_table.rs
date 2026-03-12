@@ -65,11 +65,17 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         // History mode: show per-period summaries with sub-rows
         let today = chrono::Utc::now().date_naive();
         for summary in &app.history_summaries {
-            let is_current = summary.date == today
-                || (app.scope == crate::tui::app::Scope::Week
-                    && summary.date >= crate::tui::app::Scope::Week.since())
-                || (app.scope == crate::tui::app::Scope::Month
-                    && summary.date >= crate::tui::app::Scope::Month.since());
+            let is_current = match app.scope {
+                crate::tui::app::Scope::Today | crate::tui::app::Scope::Week => {
+                    // Daily aggregation: it's current only if it is exactly today
+                    summary.date == today
+                }
+                crate::tui::app::Scope::Month | crate::tui::app::Scope::AllTime => {
+                    // Weekly aggregation: it's current if today falls within this week's 7-day span
+                    let week_end = summary.date + chrono::Duration::days(6);
+                    today >= summary.date && today <= week_end
+                }
+            };
 
             let header_style = theme::text_bold();
             let sub_style = theme::text();

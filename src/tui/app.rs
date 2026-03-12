@@ -940,32 +940,7 @@ impl App {
 
         // Apply current sort order (stable sort to prevent shuffling of equal rows)
         // Always use model name as tiebreaker for deterministic ordering.
-        match self.sort_order {
-            SortOrder::CostDesc => {
-                models.sort_by(|a, b| {
-                    b.cost_usd
-                        .total_cmp(&a.cost_usd)
-                        .then_with(|| a.model.cmp(&b.model))
-                });
-            }
-            SortOrder::TokensDesc => {
-                models.sort_by(|a, b| {
-                    let ta = a.total_tokens();
-                    let tb = b.total_tokens();
-                    tb.cmp(&ta).then_with(|| a.model.cmp(&b.model))
-                });
-            }
-            SortOrder::NameAsc => {
-                models.sort_by(|a, b| a.model.cmp(&b.model));
-            }
-            SortOrder::RequestsDesc => {
-                models.sort_by(|a, b| {
-                    b.request_count
-                        .cmp(&a.request_count)
-                        .then_with(|| a.model.cmp(&b.model))
-                });
-            }
-        }
+        sort_models(&mut models, self.sort_order);
 
         self.detail_total_cost = models.iter().map(|m| m.cost_usd).sum();
         self.detail_total_tokens = models
@@ -981,8 +956,47 @@ impl App {
                 Scope::Today | Scope::Week => rollup::aggregate_daily(&filtered),
                 Scope::Month | Scope::AllTime => rollup::aggregate_weekly(&filtered),
             };
+
+            // Sort dates descending so newest periods appear at the top
+            self.history_summaries.sort_by(|a, b| b.date.cmp(&a.date));
+
+            // Sort models within each period deterministically
+            for summary in &mut self.history_summaries {
+                sort_models(&mut summary.models, self.sort_order);
+            }
         } else {
             self.history_summaries.clear();
+        }
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+fn sort_models(models: &mut [ModelUsage], order: SortOrder) {
+    match order {
+        SortOrder::CostDesc => {
+            models.sort_by(|a, b| {
+                b.cost_usd
+                    .total_cmp(&a.cost_usd)
+                    .then_with(|| a.model.cmp(&b.model))
+            });
+        }
+        SortOrder::TokensDesc => {
+            models.sort_by(|a, b| {
+                let ta = a.total_tokens();
+                let tb = b.total_tokens();
+                tb.cmp(&ta).then_with(|| a.model.cmp(&b.model))
+            });
+        }
+        SortOrder::NameAsc => {
+            models.sort_by(|a, b| a.model.cmp(&b.model));
+        }
+        SortOrder::RequestsDesc => {
+            models.sort_by(|a, b| {
+                b.request_count
+                    .cmp(&a.request_count)
+                    .then_with(|| a.model.cmp(&b.model))
+            });
         }
     }
 }

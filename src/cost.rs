@@ -143,11 +143,11 @@ impl PricingEngine {
         }
     }
 
-    /// Three-level model matching
+    /// Four-level model matching
     fn find_pricing(&self, model: &str) -> Option<&ModelPricing> {
-        // Strip source-level provider prefix (e.g., "vertexai." from Vertex AI detection)
+        // Strip all routing prefixes (bedrock/, openai/, vertexai., anthropic., @deploy)
         // so that the model name is clean for lookup against litellm pricing data.
-        let model = model.strip_prefix("vertexai.").unwrap_or(model);
+        let model = crate::display::strip_routing_prefix(model);
 
         // 1. Exact match
         if let Some(p) = self.models.get(model) {
@@ -246,7 +246,7 @@ impl PricingEngine {
 }
 
 fn normalize_model_name(model: &str) -> String {
-    let s = model.to_lowercase();
+    let s = crate::display::strip_routing_prefix(model).to_lowercase();
     let stripped = crate::display::strip_date_suffix(&s);
     stripped.replace('.', "-")
 }
@@ -367,5 +367,113 @@ mod tests {
             .find_pricing("gpt-4-32k-0613")
             .expect("should prefix match gpt-4-32k");
         assert_eq!(p2.input_cost_per_token, Some(0.06));
+    }
+}
+
+    #[test]
+    fn test_find_pricing_cross_provider_same_model() {
+        // The same model accessed via different providers must resolve to identical pricing
+        let json = r#"{
+            "anthropic/claude-3-5-sonnet-20241022": {
+                "input_cost_per_token": 0.003,
+                "output_cost_per_token": 0.015
+            }
+        }"#;
+        let engine = PricingEngine::parse_pricing(json).unwrap();
+
+        let variants = [
+            "claude-3-5-sonnet-20241022",
+            "anthropic/claude-3-5-sonnet-20241022",
+            "vertexai.claude-3-5-sonnet-20241022",
+            "bedrock/anthropic.claude-3-5-sonnet-20241022",
+            "openai/claude-3-5-sonnet-20241022",
+        ];
+
+        for variant in &variants {
+            let pricing = engine.find_pricing(variant);
+            assert!(
+                pricing.is_some(),
+                "find_pricing failed for variant: {variant}"
+            );
+            assert_eq!(
+                pricing.unwrap().input_cost_per_token,
+                Some(0.003),
+                "wrong input cost for variant: {variant}"
+            );
+            assert_eq!(
+                pricing.unwrap().output_cost_per_token,
+                Some(0.015),
+                "wrong output cost for variant: {variant}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_find_pricing_strips_deploy_suffix() {
+        let json = r#"{
+            "gpt-4o": {
+                "input_cost_per_token": 0.0025,
+                "output_cost_per_token": 0.01
+            }
+        }"#;
+        let engine = PricingEngine::parse_pricing(json).unwrap();
+
+        let p = engine
+            .find_pricing("gpt-4o@my-deployment")
+            .expect("should strip @deploy suffix");
+        assert_eq!(p.input_cost_per_token, Some(0.0025));
+    
+    #[test]
+    fn test_find_pricing_cross_provider_same_model() {
+        // The same model accessed via different providers must resolve to identical pricing
+        let json = r#"{
+            "anthropic/claude-3-5-sonnet-20241022": {
+                "input_cost_per_token": 0.003,
+                "output_cost_per_token": 0.015
+            }
+        }"#;
+        let engine = PricingEngine::parse_pricing(json).unwrap();
+
+        let variants = [
+            "claude-3-5-sonnet-20241022",
+            "anthropic/claude-3-5-sonnet-20241022",
+            "vertexai.claude-3-5-sonnet-20241022",
+            "bedrock/anthropic.claude-3-5-sonnet-20241022",
+            "openai/claude-3-5-sonnet-20241022",
+        ];
+
+        for variant in &variants {
+            let pricing = engine.find_pricing(variant);
+            assert!(
+                pricing.is_some(),
+                "find_pricing failed for variant: {variant}"
+            );
+            assert_eq!(
+                pricing.unwrap().input_cost_per_token,
+                Some(0.003),
+                "wrong input cost for variant: {variant}"
+            );
+            assert_eq!(
+                pricing.unwrap().output_cost_per_token,
+                Some(0.015),
+                "wrong output cost for variant: {variant}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_find_pricing_strips_deploy_suffix() {
+        let json = r#"{
+            "gpt-4o": {
+                "input_cost_per_token": 0.0025,
+                "output_cost_per_token": 0.01
+            }
+        }"#;
+        let engine = PricingEngine::parse_pricing(json).unwrap();
+
+        let p = engine
+            .find_pricing("gpt-4o@my-deployment")
+            .expect("should strip @deploy suffix");
+        assert_eq!(p.input_cost_per_token, Some(0.0025));
     }
 }

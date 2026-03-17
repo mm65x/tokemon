@@ -368,7 +368,6 @@ mod tests {
             .expect("should prefix match gpt-4-32k");
         assert_eq!(p2.input_cost_per_token, Some(0.06));
     }
-}
 
     #[test]
     fn test_find_pricing_cross_provider_same_model() {

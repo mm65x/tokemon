@@ -107,11 +107,15 @@ impl PricingEngine {
         let mut pricing_cache: HashMap<&str, Option<&ModelPricing>> = HashMap::new();
 
         for entry in entries.iter_mut() {
-            // If entry already has a cost (even $0.00), keep it.
-            // Some(0.0) means "already priced, result was zero" (e.g.
-            // free model or no pricing data). Re-pricing would cause
+            // Skip records that already have a positive cost — these were
+            // priced correctly on a previous run and re-pricing would cause
             // cost fluctuations when records are loaded from cache.
-            if entry.cost_usd.is_some() {
+            //
+            // Records with `Some(0.0)` are treated as *unpriced*: some
+            // source parsers store `cost: 0` when they don't know the
+            // price for a model, so we give the pricing engine a chance
+            // to fill in the real cost.
+            if entry.cost_usd.is_some_and(|c| c > 0.0) {
                 continue;
             }
 
@@ -367,5 +371,88 @@ mod tests {
             .find_pricing("gpt-4-32k-0613")
             .expect("should prefix match gpt-4-32k");
         assert_eq!(p2.input_cost_per_token, Some(0.06));
+    }
+
+    #[test]
+    fn test_zero_cost_gets_repriced() {
+        use chrono::Utc;
+        use std::borrow::Cow;
+
+        let engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        let mut records = vec![
+            // Record with cost_usd = Some(0.0) should be re-priced
+            Record {
+                timestamp: Utc::now(),
+                provider: Cow::Borrowed("test"),
+                model: Some("model-a".to_string()),
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                thinking_tokens: 0,
+                cost_usd: Some(0.0),
+                message_id: None,
+                request_id: None,
+                session_id: None,
+            },
+            // Record with a positive cost should be kept as-is
+            Record {
+                timestamp: Utc::now(),
+                provider: Cow::Borrowed("test"),
+                model: Some("model-a".to_string()),
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                thinking_tokens: 0,
+                cost_usd: Some(99.0),
+                message_id: None,
+                request_id: None,
+                session_id: None,
+            },
+            // Record with cost_usd = None should also be priced
+            Record {
+                timestamp: Utc::now(),
+                provider: Cow::Borrowed("test"),
+                model: Some("model-a".to_string()),
+                input_tokens: 1000,
+                output_tokens: 500,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                thinking_tokens: 0,
+                cost_usd: None,
+                message_id: None,
+                request_id: None,
+                session_id: None,
+            },
+        ];
+
+        engine.apply_costs(&mut records);
+
+        // model-a: input=0.001, output=0.002
+        // expected = 1000 * 0.001 + 500 * 0.002 = 1.0 + 1.0 = 2.0
+        let expected_cost = 2.0;
+
+        // Some(0.0) record got re-priced
+        assert_eq!(
+            records[0].cost_usd,
+            Some(expected_cost),
+            "record with cost_usd=Some(0.0) should be re-priced"
+        );
+
+        // Positive cost record kept original value
+        assert_eq!(
+            records[1].cost_usd,
+            Some(99.0),
+            "record with positive cost should not be re-priced"
+        );
+
+        // None record got priced
+        assert_eq!(
+            records[2].cost_usd,
+            Some(expected_cost),
+            "record with cost_usd=None should be priced"
+        );
     }
 }

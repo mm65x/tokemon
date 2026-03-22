@@ -423,7 +423,19 @@ impl Cache {
             .prepare("SELECT DISTINCT source_file FROM usage_entries WHERE preserved = 0")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
-        let cached_files: Vec<String> = rows.flatten().collect();
+        let mut skipped = 0u64;
+        let mut cached_files = Vec::new();
+        for row in rows {
+            match row {
+                Ok(file) => cached_files.push(file),
+                Err(_) => skipped += 1,
+            }
+        }
+        if skipped > 0 {
+            eprintln!(
+                "[tokemon] Warning: skipped {skipped} cached rows while checking preserved files"
+            );
+        }
         for file in &cached_files {
             if !discovered_files.contains(file) {
                 self.conn.execute(

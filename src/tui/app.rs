@@ -3,7 +3,8 @@ use std::time::Instant;
 
 use crate::timestamp;
 use chrono::{Duration, NaiveDate, Utc};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use ratatui::layout::Rect;
 
 use crate::config::Config;
 use crate::render::{self, format_tokens_short};
@@ -13,12 +14,16 @@ use crate::{cache, cost, dedup, rollup};
 
 use super::diff::{self, RowKey};
 use super::event::Event;
+use super::views::dashboard::{self, MouseAction};
 
 /// Duration (in seconds) for the per-cell highlight fade animation.
 const HIGHLIGHT_DURATION_SECS: f64 = 1.5;
 
 /// Duration (in seconds) for warnings to remain visible in the status bar.
 const WARNING_DISPLAY_SECS: f64 = 5.0;
+
+/// Number of rows moved by one mouse-wheel event.
+const MOUSE_SCROLL_ROWS: u16 = 3;
 
 // ── View scope ────────────────────────────────────────────────────────────
 
@@ -317,10 +322,15 @@ impl App {
     }
 
     /// Handle an incoming event. Returns `true` if the UI needs a redraw.
-    pub fn handle_event(&mut self, event: &Event) -> bool {
+    pub fn handle_event(&mut self, event: &Event, terminal_area: Rect) -> bool {
         match event {
             Event::Key(key) => {
                 let changed = self.handle_key(*key);
+                self.dirty |= changed;
+                changed
+            }
+            Event::Mouse(mouse) => {
+                let changed = self.handle_mouse(*mouse, terminal_area);
                 self.dirty |= changed;
                 changed
             }
@@ -363,6 +373,19 @@ impl App {
                 true
             }
             Event::Render => false,
+        }
+    }
+
+    fn handle_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
+        if self.show_settings || self.show_help || self.filter_active {
+            return false;
+        }
+
+        match dashboard::mouse_action(terminal_area, mouse) {
+            Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
+            Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
+            Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
+            None => false,
         }
     }
 
@@ -422,26 +445,10 @@ impl App {
                 self.filter_text = self.applied_filter.clone();
                 true
             }
-            KeyCode::Char('t') => {
-                self.scope = Scope::Today;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('w') => {
-                self.scope = Scope::Week;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('m') => {
-                self.scope = Scope::Month;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('a') => {
-                self.scope = Scope::AllTime;
-                self.reset_view_state();
-                true
-            }
+            KeyCode::Char('t') => self.select_scope(Scope::Today),
+            KeyCode::Char('w') => self.select_scope(Scope::Week),
+            KeyCode::Char('m') => self.select_scope(Scope::Month),
+            KeyCode::Char('a') => self.select_scope(Scope::AllTime),
             KeyCode::Char('s') => {
                 self.sort_order = self.sort_order.next();
                 self.reset_view_state();
@@ -460,15 +467,8 @@ impl App {
                 self.recompute_detail();
                 true
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                let max = self.detail_models.len().saturating_sub(1) as u16;
-                self.scroll_offset = self.scroll_offset.saturating_add(1).min(max);
-                true
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
-                true
-            }
+            KeyCode::Char('j') | KeyCode::Down => self.scroll_down(1),
+            KeyCode::Char('k') | KeyCode::Up => self.scroll_up(1),
             KeyCode::Left => {
                 let new_scope = match self.scope {
                     Scope::Today | Scope::Week => Scope::Today,
@@ -498,6 +498,33 @@ impl App {
                 }
             }
             _ => false,
+        }
+    }
+
+    fn select_scope(&mut self, scope: Scope) -> bool {
+        self.scope = scope;
+        self.reset_view_state();
+        true
+    }
+
+    fn scroll_down(&mut self, rows: u16) -> bool {
+        let max = self.detail_models.len().saturating_sub(1) as u16;
+        let next = self.scroll_offset.saturating_add(rows).min(max);
+        if next == self.scroll_offset {
+            false
+        } else {
+            self.scroll_offset = next;
+            true
+        }
+    }
+
+    fn scroll_up(&mut self, rows: u16) -> bool {
+        let next = self.scroll_offset.saturating_sub(rows);
+        if next == self.scroll_offset {
+            false
+        } else {
+            self.scroll_offset = next;
+            true
         }
     }
 

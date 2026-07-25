@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use crossterm::event::{Event as CrosstermEvent, EventStream, KeyEventKind};
+use crossterm::event::{
+    Event as CrosstermEvent, EventStream, KeyEventKind, MouseButton, MouseEventKind,
+};
 use futures_lite::StreamExt;
 use tokio::sync::mpsc;
 
@@ -9,6 +11,8 @@ use tokio::sync::mpsc;
 pub enum Event {
     /// A key was pressed.
     Key(crossterm::event::KeyEvent),
+    /// A mouse button was pressed or the wheel was scrolled.
+    Mouse(crossterm::event::MouseEvent),
     /// Terminal was resized (values used by ratatui's `frame.area()` implicitly).
     #[allow(dead_code)]
     Resize(u16, u16),
@@ -75,13 +79,7 @@ impl EventHandler {
                     // Crossterm terminal events (key presses, resize, etc.)
                     maybe_event = crossterm_events.next() => {
                         match maybe_event {
-                            Some(Ok(evt)) => match evt {
-                                CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => {
-                                    Some(Event::Key(key))
-                                }
-                                CrosstermEvent::Resize(w, h) => Some(Event::Resize(w, h)),
-                                _ => None,
-                            },
+                            Some(Ok(evt)) => map_crossterm_event(&evt),
                             // Stream ended or error — stop the loop
                             Some(Err(_)) | None => break,
                         }
@@ -114,5 +112,71 @@ impl EventHandler {
     #[allow(dead_code)]
     pub fn try_next(&mut self) -> Result<Event, mpsc::error::TryRecvError> {
         self.rx.try_recv()
+    }
+}
+
+fn map_crossterm_event(event: &CrosstermEvent) -> Option<Event> {
+    match event {
+        CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => Some(Event::Key(*key)),
+        CrosstermEvent::Mouse(mouse)
+            if matches!(
+                mouse.kind,
+                MouseEventKind::Down(MouseButton::Left)
+                    | MouseEventKind::ScrollUp
+                    | MouseEventKind::ScrollDown
+            ) =>
+        {
+            Some(Event::Mouse(*mouse))
+        }
+        CrosstermEvent::Resize(width, height) => Some(Event::Resize(*width, *height)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers, MouseButton, MouseEvent,
+        MouseEventKind,
+    };
+
+    use super::{map_crossterm_event, CrosstermEvent, Event};
+
+    #[test]
+    fn routes_mouse_events() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 12,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        let mapped = map_crossterm_event(&CrosstermEvent::Mouse(mouse));
+
+        assert!(matches!(mapped, Some(Event::Mouse(event)) if event == mouse));
+    }
+
+    #[test]
+    fn ignores_key_release_events() {
+        let key = KeyEvent {
+            code: KeyCode::Char('q'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Release,
+            state: KeyEventState::NONE,
+        };
+
+        assert!(map_crossterm_event(&CrosstermEvent::Key(key)).is_none());
+    }
+
+    #[test]
+    fn ignores_mouse_motion() {
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 12,
+            row: 4,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        assert!(map_crossterm_event(&CrosstermEvent::Mouse(mouse)).is_none());
     }
 }

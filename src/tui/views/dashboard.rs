@@ -2,10 +2,10 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::widgets::Block;
 use ratatui::Frame;
 
-use crate::tui::app::App;
+use crate::tui::app::{App, FullscreenView};
 use crate::tui::theme;
 use crate::tui::views::{help, settings};
-use crate::tui::widgets::{header, status_bar, summary_cards, usage_table};
+use crate::tui::widgets::{header, heatmap, spike_chart, status_bar, summary_cards, usage_table};
 
 /// Render the complete dashboard view.
 ///
@@ -23,6 +23,32 @@ pub fn render(frame: &mut Frame, app: &App) {
     // Fill the entire background
     let bg = Block::default().style(theme::text());
     frame.render_widget(bg, area);
+
+    if app.fullscreen != FullscreenView::None {
+        let layout = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(area);
+        header::render(frame, layout[0], app);
+        match app.fullscreen {
+            FullscreenView::Heatmap => heatmap::render(frame, layout[1], &app.heatmap_data),
+            FullscreenView::SpikeChart => {
+                spike_chart::render(frame, layout[1], app.spike_data.as_ref());
+            }
+            FullscreenView::None => {}
+        }
+        status_bar::render(frame, layout[2], app);
+
+        if app.show_help {
+            help::render(frame);
+        }
+        if app.show_settings {
+            settings::render(frame, app);
+        }
+        return;
+    }
 
     // Determine card height based on terminal height
     let card_height = if area.height >= 30 {

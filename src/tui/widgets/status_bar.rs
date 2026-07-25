@@ -3,7 +3,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
 
-use crate::tui::app::App;
+use crate::tui::app::{App, FullscreenView};
 use crate::tui::theme;
 
 /// Render the bottom status bar with keybinding hints or filter input.
@@ -51,17 +51,29 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     let sort_label = format!("sort:{}", app.sort_order.label());
     let group_label = format!("group:{}", app.group_by.label());
-    let bindings: Vec<(&str, &str)> = vec![
-        ("t/w/m/a", "scope"),
-        ("g", &group_label),
-        ("h", "history"),
-        ("s", &sort_label),
-        ("/", "filter"),
-        ("j/k", "scroll"),
-        ("S", "settings"),
-        ("?", "help"),
-        ("q", "quit"),
-    ];
+    let bindings: Vec<(&str, &str)> = if app.fullscreen == FullscreenView::None {
+        vec![
+            ("t/w/m/a", "scope"),
+            ("g", &group_label),
+            ("h", "history"),
+            ("c", "calendar"),
+            ("v", "spikes"),
+            ("s", &sort_label),
+            ("/", "filter"),
+            ("j/k", "scroll"),
+            ("S", "settings"),
+            ("?", "help"),
+            ("q", "quit"),
+        ]
+    } else {
+        vec![
+            ("c", "calendar"),
+            ("v", "spikes"),
+            ("Esc", "dashboard"),
+            ("?", "help"),
+            ("q", "quit"),
+        ]
+    };
 
     for (i, (key, desc)) in bindings.iter().enumerate() {
         if i > 0 {

@@ -196,6 +196,21 @@ pub fn highlight_cell(intensity: f64, normal_fg: Color) -> Style {
     style
 }
 
+/// Stable colour for a model's API provider in usage visualizations.
+#[must_use]
+pub fn provider_color(provider: &str) -> Color {
+    match provider {
+        "Anthropic" => Color::Rgb(255, 140, 80),
+        "OpenAI" | "AWS Bedrock" | "Azure" => GREEN,
+        "Google" | "Vertex AI" => Color::Rgb(85, 150, 255),
+        "DeepSeek" => Color::Rgb(180, 120, 255),
+        "Mistral" => YELLOW,
+        "Meta" => CYAN,
+        "Alibaba" => RED,
+        _ => DIM,
+    }
+}
+
 /// Linearly interpolate between two RGB colours.
 fn lerp_color(from: Color, to: Color, t: f64) -> Color {
     let t = t.clamp(0.0, 1.0);

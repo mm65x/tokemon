@@ -307,11 +307,14 @@ impl App {
                 }
             }
         }
-        // Compute all-time base from historical records (before the
-        // in-memory window). This runs once at startup.
-        app.compute_all_time_base();
-        // Initial data load: sync sources then read cache.
-        app.poll_sources();
+        // Initial data load: sync sources before computing the historical
+        // base so a fresh cache includes old records on the first render.
+        if let Err(e) = app.poll_sources() {
+            app.set_warning(format!("Data refresh failed: {e}"));
+        }
+        if let Err(e) = app.compute_all_time_base() {
+            app.set_warning(format!("History unavailable: {e}"));
+        }
         app.reload_from_cache();
         app
     }
@@ -330,7 +333,9 @@ impl App {
                 // The watcher thread also does this on file events, but
                 // tick-based polling catches changes that `notify` may miss
                 // (e.g. SQLite WAL writes on some platforms).
-                self.poll_sources();
+                if let Err(e) = self.poll_sources() {
+                    self.set_warning(format!("Data refresh failed: {e}"));
+                }
                 self.dirty |= self.reload_from_cache();
                 // Expire old warnings
                 if let Some((_, t)) = &self.last_warning {
@@ -354,7 +359,7 @@ impl App {
                 self.dirty
             }
             Event::Warning(msg) => {
-                self.last_warning = Some((msg.clone(), Instant::now()));
+                self.set_warning(msg.clone());
                 self.dirty = true;
                 true
             }
@@ -376,6 +381,11 @@ impl App {
                 None
             }
         })
+    }
+
+    fn set_warning(&mut self, message: String) {
+        self.last_warning = Some((message, Instant::now()));
+        self.dirty = true;
     }
 
     #[allow(clippy::too_many_lines)]
@@ -449,7 +459,9 @@ impl App {
             }
             KeyCode::Char('g') => {
                 self.group_by = self.group_by.next();
-                self.compute_all_time_base();
+                if let Err(e) = self.compute_all_time_base() {
+                    self.set_warning(format!("History refresh failed: {e}"));
+                }
                 self.prev_models.clear();
                 self.highlight_map.clear();
                 self.recompute_detail();
@@ -461,7 +473,8 @@ impl App {
                 true
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                let max = self.detail_models.len().saturating_sub(1) as u16;
+                let max =
+                    u16::try_from(self.rendered_row_count().saturating_sub(1)).unwrap_or(u16::MAX);
                 self.scroll_offset = self.scroll_offset.saturating_add(1).min(max);
                 true
             }
@@ -624,7 +637,9 @@ impl App {
                             Some(("Saved!".to_string(), Instant::now()));
                         // Recompute all-time base if sparkline metric changed
                         if self.config.sparkline_metric != old_metric {
-                            self.compute_all_time_base();
+                            if let Err(e) = self.compute_all_time_base() {
+                                self.set_warning(format!("History refresh failed: {e}"));
+                            }
                         }
                     }
                     Err(e) => {
@@ -641,21 +656,22 @@ impl App {
     /// Load all records older than the in-memory window, apply pricing,
     /// and compute base totals and weekly sparkline for the All Time card.
     /// Called once at startup.
-    fn compute_all_time_base(&mut self) {
+    fn compute_all_time_base(&mut self) -> crate::error::Result<()> {
         let cutoff = Scope::Month.since() - Duration::days(30);
         let Some(cutoff_pred) = cutoff.pred_opt() else {
-            return;
+            return Ok(());
         };
 
-        let Ok(cache) = cache::Cache::open() else {
-            return;
-        };
-        let mut historical = cache
-            .load_entries_filtered(None, Some(cutoff_pred), &[])
-            .unwrap_or_default();
+        let cache = cache::Cache::open()?;
+        let mut historical = cache.load_entries_filtered(None, Some(cutoff_pred), &[])?;
 
         if historical.is_empty() {
-            return;
+            self.all_time_base_cost = 0.0;
+            self.all_time_base_tokens = 0;
+            self.all_time_base_sparkline.clear();
+            self.all_time_base_start_week = None;
+            self.all_time_base_models.clear();
+            return Ok(());
         }
 
         // Apply pricing to historical records.
@@ -663,21 +679,27 @@ impl App {
             engine.apply_costs(&mut historical);
         }
 
-        self.all_time_base_cost = historical.iter().map(|r| r.cost_usd.unwrap_or(0.0)).sum();
-        self.all_time_base_tokens = historical
+        let all_time_base_cost = historical.iter().map(|r| r.cost_usd.unwrap_or(0.0)).sum();
+        let all_time_base_tokens = historical
             .iter()
             .map(super::super::types::Record::total_tokens)
             .sum();
 
         // Build weekly sparkline from historical records.
         let use_cost = self.config.sparkline_metric == crate::config::SparklineMetric::Cost;
-        let (sparkline, start_week) = build_weekly_sparkline_data(&historical, use_cost);
-        self.all_time_base_sparkline = sparkline;
-        self.all_time_base_start_week = start_week;
+        let (all_time_base_sparkline, all_time_base_start_week) =
+            build_weekly_sparkline_data(&historical, use_cost);
 
         // Aggregate into model-level breakdown for the detail table.
         let summaries = rollup::aggregate_daily(&historical);
-        self.all_time_base_models = aggregate_summaries_to_models(&summaries, self.group_by);
+        let all_time_base_models = aggregate_summaries_to_models(&summaries, self.group_by);
+
+        self.all_time_base_cost = all_time_base_cost;
+        self.all_time_base_tokens = all_time_base_tokens;
+        self.all_time_base_sparkline = all_time_base_sparkline;
+        self.all_time_base_start_week = all_time_base_start_week;
+        self.all_time_base_models = all_time_base_models;
+        Ok(())
     }
 
     /// Poll source files for mtime changes, re-parse any that changed,
@@ -687,35 +709,45 @@ impl App {
     /// It checks file modification times (including SQLite WAL siblings)
     /// against the mtimes stored in the cache. Only files with newer
     /// mtimes are re-parsed, so the cost is negligible when nothing changed.
-    fn poll_sources(&self) {
-        let Ok(mut cache) = cache::Cache::open() else {
-            return;
-        };
-        let cached_mtimes = cache.cached_file_mtimes().unwrap_or_default();
-        let providers = self.registry.available();
+    fn poll_sources(&mut self) -> crate::error::Result<()> {
+        let mut cache = cache::Cache::open()?;
+        let cached_mtimes = cache.cached_file_mtimes()?;
 
         // Collect parsed results with owned PathBufs.
         let mut parsed: Vec<(std::path::PathBuf, i64, Vec<crate::types::Record>)> = Vec::new();
+        let parse_warning = {
+            let providers = self.registry.available();
+            let mut warning = None;
 
-        for provider in &providers {
-            for file in provider.discover_files() {
-                let mtime = cache::file_mtime_secs_for_db(&file).unwrap_or(0);
-                let file_key = file.display().to_string();
-                if cached_mtimes.get(&file_key) == Some(&mtime) {
-                    continue;
-                }
-                if let Ok(entries) = provider.parse_file(&file) {
-                    // Don't apply pricing here — the cache stores raw source
-                    // data. Pricing is applied at read time in
-                    // load_records_from_cache(), matching the CLI path.
-                    let entries = dedup::deduplicate(entries);
-                    parsed.push((file, mtime, entries));
+            for provider in &providers {
+                for file in provider.discover_files() {
+                    let mtime = cache::file_mtime_secs_for_db(&file).unwrap_or(0);
+                    let file_key = file.display().to_string();
+                    if cached_mtimes.get(&file_key) == Some(&mtime) {
+                        continue;
+                    }
+                    match provider.parse_file(&file) {
+                        Ok(entries) => {
+                            // Don't apply pricing here — the cache stores raw source
+                            // data. Pricing is applied at read time in
+                            // load_records_from_cache(), matching the CLI path.
+                            let entries = dedup::deduplicate(entries);
+                            parsed.push((file, mtime, entries));
+                        }
+                        Err(e) => {
+                            warning = Some(format!("Failed to parse {}: {e}", file.display()));
+                        }
+                    }
                 }
             }
+            warning
+        };
+        if let Some(warning) = parse_warning {
+            self.set_warning(warning);
         }
 
         if parsed.is_empty() {
-            return;
+            return Ok(());
         }
 
         // write_entries takes &[(&Path, i64, Vec<Record>)].
@@ -725,7 +757,8 @@ impl App {
             .map(|(p, m, e)| (p.as_path(), *m, std::mem::take(e)))
             .collect();
 
-        let _ = cache.write_entries(&refs);
+        cache.write_entries(&refs)?;
+        Ok(())
     }
 
     /// Re-read the cache and recompute all derived state.
@@ -735,7 +768,13 @@ impl App {
     /// in-memory aggregations. File discovery and parsing are handled
     /// by the background watcher thread.
     fn reload_from_cache(&mut self) -> bool {
-        let records = load_records_from_cache(self.pricing.as_ref());
+        let records = match load_records_from_cache(self.pricing.as_ref()) {
+            Ok(records) => records,
+            Err(e) => {
+                self.set_warning(format!("Usage cache unavailable: {e}"));
+                return false;
+            }
+        };
         self.cached_records = records;
 
         // Snapshot cards before recomputing to detect card-only changes.
@@ -809,6 +848,15 @@ impl App {
                 1.0 - (elapsed / HIGHLIGHT_DURATION_SECS)
             }
         })
+    }
+
+    #[must_use]
+    fn rendered_row_count(&self) -> usize {
+        table_row_count(
+            &self.detail_models,
+            &self.history_summaries,
+            self.show_history,
+        )
     }
 
     fn recompute_cards(&mut self) {
@@ -1007,17 +1055,15 @@ fn sort_models(models: &mut [ModelUsage], order: SortOrder) {
 
 // ── Data loading ──────────────────────────────────────────────────────────
 
-fn load_records_from_cache(pricing: Option<&cost::PricingEngine>) -> Vec<Record> {
-    let Ok(c) = cache::Cache::open() else {
-        return Vec::new();
-    };
+fn load_records_from_cache(
+    pricing: Option<&cost::PricingEngine>,
+) -> crate::error::Result<Vec<Record>> {
+    let c = cache::Cache::open()?;
 
     // Load everything — the TUI filters in memory for card summaries.
     // We load the last ~60 days to keep things bounded.
     let since = Scope::Month.since() - chrono::Duration::days(30);
-    let mut entries = c
-        .load_entries_filtered(Some(since), None, &[])
-        .unwrap_or_default();
+    let mut entries = c.load_entries_filtered(Some(since), None, &[])?;
 
     // Apply pricing from pre-loaded engine (no disk I/O here).
     if let Some(engine) = pricing {
@@ -1026,5 +1072,52 @@ fn load_records_from_cache(pricing: Option<&cost::PricingEngine>) -> Vec<Record>
 
     // Dedup is handled inside load_entries_filtered.
     entries.sort_by_key(|e| e.timestamp);
-    entries
+    Ok(entries)
+}
+
+fn table_row_count(
+    detail_models: &[ModelUsage],
+    history_summaries: &[PeriodSummary],
+    show_history: bool,
+) -> usize {
+    let data_rows = if show_history && !history_summaries.is_empty() {
+        history_summaries
+            .iter()
+            .map(|summary| 1usize.saturating_add(summary.models.len()))
+            .sum()
+    } else {
+        detail_models.len()
+    };
+    data_rows.saturating_add(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary(model_count: usize) -> PeriodSummary {
+        PeriodSummary {
+            date: NaiveDate::from_ymd_opt(2026, 1, 1).expect("valid date"),
+            label: "period".to_string(),
+            models: vec![ModelUsage::default(); model_count],
+            total_input: 0,
+            total_output: 0,
+            total_thinking: 0,
+            total_cost: 0.0,
+            total_requests: 0,
+        }
+    }
+
+    #[test]
+    fn table_row_count_includes_history_headers_models_and_total() {
+        let history = vec![summary(2), summary(3)];
+        assert_eq!(table_row_count(&[], &history, true), 8);
+    }
+
+    #[test]
+    fn table_row_count_uses_detail_rows_outside_history_mode() {
+        let details = vec![ModelUsage::default(); 4];
+        let history = vec![summary(2)];
+        assert_eq!(table_row_count(&details, &history, false), 5);
+    }
 }

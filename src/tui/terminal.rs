@@ -11,18 +11,63 @@ use ratatui::Terminal;
 
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+/// Owns an initialised terminal session and restores it on every exit path.
+pub struct TerminalSession {
+    terminal: Tui,
+    active: bool,
+}
+
+impl TerminalSession {
+    /// Restore the terminal and consume the session.
+    pub fn finish(mut self) -> io::Result<()> {
+        self.active = false;
+        restore()
+    }
+}
+
+impl std::ops::Deref for TerminalSession {
+    type Target = Tui;
+
+    fn deref(&self) -> &Self::Target {
+        &self.terminal
+    }
+}
+
+impl std::ops::DerefMut for TerminalSession {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.terminal
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = restore();
+        }
+    }
+}
+
 /// Initialise the terminal: raw mode, alternate screen, mouse capture.
-/// Returns the `Terminal` handle.
+/// Returns a session that restores the terminal when dropped.
 ///
 /// # Errors
 ///
 /// Returns an error if terminal initialisation fails.
-pub fn init() -> io::Result<Tui> {
+pub fn init() -> io::Result<TerminalSession> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    if let Err(error) = execute!(stdout, EnterAlternateScreen, EnableMouseCapture) {
+        let _ = restore();
+        return Err(error);
+    }
     let backend = CrosstermBackend::new(stdout);
-    let terminal = Terminal::new(backend)?;
+    let terminal = match Terminal::new(backend) {
+        Ok(terminal) => terminal,
+        Err(error) => {
+            let _ = restore();
+            return Err(error);
+        }
+    };
 
     // Install a panic hook that restores the terminal before printing the
     // panic message — otherwise the user is left with a broken terminal.
@@ -32,7 +77,10 @@ pub fn init() -> io::Result<Tui> {
         original_hook(info);
     }));
 
-    Ok(terminal)
+    Ok(TerminalSession {
+        terminal,
+        active: true,
+    })
 }
 
 /// Restore the terminal to its original state.
@@ -41,7 +89,7 @@ pub fn init() -> io::Result<Tui> {
 ///
 /// Returns an error if terminal restoration fails.
 pub fn restore() -> io::Result<()> {
-    disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
-    Ok(())
+    let screen_result = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
+    let raw_result = disable_raw_mode();
+    screen_result.and(raw_result)
 }

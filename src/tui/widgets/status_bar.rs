@@ -53,6 +53,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let group_label = format!("group:{}", app.group_by.label());
     let bindings: Vec<(&str, &str)> = vec![
         ("t/w/m/a", "scope"),
+        ("T/W/M/A", "cards"),
         ("g", &group_label),
         ("h", "history"),
         ("s", &sort_label),

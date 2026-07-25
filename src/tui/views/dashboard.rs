@@ -24,14 +24,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     let bg = Block::default().style(theme::text());
     frame.render_widget(bg, area);
 
-    // Determine card height based on terminal height
-    let card_height = if area.height >= 30 {
-        7
-    } else if area.height >= 20 {
-        5
-    } else {
-        0 // Skip cards on very small terminals
-    };
+    let card_height = summary_card_height(area.height, app.card_visibility.any_visible());
 
     let mut constraints = vec![
         Constraint::Length(1), // header
@@ -71,5 +64,36 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
     if app.show_settings {
         settings::render(frame, app);
+    }
+}
+
+#[must_use]
+const fn summary_card_height(terminal_height: u16, has_visible_cards: bool) -> u16 {
+    if !has_visible_cards {
+        0
+    } else if terminal_height >= 30 {
+        7
+    } else if terminal_height >= 20 {
+        5
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summary_card_height;
+
+    #[test]
+    fn hidden_cards_reclaim_the_layout_space() {
+        assert_eq!(summary_card_height(40, false), 0);
+        assert_eq!(summary_card_height(25, false), 0);
+    }
+
+    #[test]
+    fn visible_cards_keep_responsive_height() {
+        assert_eq!(summary_card_height(30, true), 7);
+        assert_eq!(summary_card_height(20, true), 5);
+        assert_eq!(summary_card_height(19, true), 0);
     }
 }

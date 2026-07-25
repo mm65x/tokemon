@@ -7,7 +7,7 @@ use ratatui::Frame;
 use crate::tui::app::{App, Scope};
 use crate::tui::theme;
 
-/// Render the four summary cards: Today, This Week, This Month, All Time.
+/// Render the visible summary cards: Today, This Week, This Month, All Time.
 ///
 /// Each card shows:
 /// - Label (highlighted if it matches the active scope)
@@ -15,27 +15,23 @@ use crate::tui::theme;
 /// - Token count (secondary)
 /// - Sparkline (trend)
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
-    // Split into 4 equal columns
-    let [c1, c2, c3, c4] = Layout::horizontal([
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-    ])
-    .areas(area);
+    let visible_count = app.card_visibility.visible_count();
+    if visible_count == 0 {
+        return;
+    }
 
-    let scoped = [
-        (Scope::Today, c1),
-        (Scope::Week, c2),
-        (Scope::Month, c3),
-        (Scope::AllTime, c4),
-    ];
+    let visible_scopes: Vec<Scope> = Scope::ALL
+        .into_iter()
+        .filter(|scope| app.card_visibility.is_visible(*scope))
+        .collect();
+    let constraints = vec![Constraint::Ratio(1, visible_count as u32); visible_count];
+    let card_areas = Layout::horizontal(constraints).split(area);
     let show_sparklines = app.config.show_sparklines;
-    for (i, &(scope, card_area)) in scoped.iter().enumerate() {
+    for (scope, card_area) in visible_scopes.into_iter().zip(card_areas.iter().copied()) {
         render_card(
             frame,
             card_area,
-            &app.cards[i],
+            &app.cards[scope.card_index()],
             scope == app.scope,
             show_sparklines,
         );

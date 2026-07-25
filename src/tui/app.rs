@@ -1006,7 +1006,8 @@ impl App {
             };
 
             // Sort dates descending so newest periods appear at the top
-            self.history_summaries.sort_by(|a, b| b.date.cmp(&a.date));
+            self.history_summaries
+                .sort_by_key(|summary| std::cmp::Reverse(summary.date));
 
             // Regroup and sort models within each period based on current settings
             for summary in &mut self.history_summaries {

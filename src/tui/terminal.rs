@@ -20,8 +20,9 @@ pub struct TerminalSession {
 impl TerminalSession {
     /// Restore the terminal and consume the session.
     pub fn finish(mut self) -> io::Result<()> {
+        restore()?;
         self.active = false;
-        restore()
+        Ok(())
     }
 }
 

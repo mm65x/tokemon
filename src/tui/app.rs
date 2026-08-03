@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration as StdDuration, Instant};
 
 use crate::timestamp;
 use chrono::{Duration, NaiveDate, Utc};
@@ -19,6 +19,12 @@ const HIGHLIGHT_DURATION_SECS: f64 = 1.5;
 
 /// Duration (in seconds) for warnings to remain visible in the status bar.
 const WARNING_DISPLAY_SECS: f64 = 5.0;
+
+/// Maximum time the interactive UI waits for a cache write lock.
+///
+/// The background watcher keeps the normal cache timeout. The TUI must stay
+/// responsive when another process temporarily owns the database writer lock.
+const TUI_CACHE_BUSY_TIMEOUT: StdDuration = StdDuration::from_millis(100);
 
 // ── View scope ────────────────────────────────────────────────────────────
 
@@ -662,7 +668,7 @@ impl App {
             return Ok(());
         };
 
-        let cache = cache::Cache::open()?;
+        let cache = cache::Cache::open_read_only_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
         let mut historical = cache.load_entries_filtered(None, Some(cutoff_pred), &[])?;
 
         if historical.is_empty() {
@@ -710,7 +716,7 @@ impl App {
     /// against the mtimes stored in the cache. Only files with newer
     /// mtimes are re-parsed, so the cost is negligible when nothing changed.
     fn poll_sources(&mut self) -> crate::error::Result<()> {
-        let mut cache = cache::Cache::open()?;
+        let mut cache = cache::Cache::open_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
         let cached_mtimes = cache.cached_file_mtimes()?;
 
         // Collect parsed results with owned PathBufs.
@@ -1059,7 +1065,7 @@ fn sort_models(models: &mut [ModelUsage], order: SortOrder) {
 fn load_records_from_cache(
     pricing: Option<&cost::PricingEngine>,
 ) -> crate::error::Result<Vec<Record>> {
-    let c = cache::Cache::open()?;
+    let c = cache::Cache::open_read_only_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
 
     // Load everything — the TUI filters in memory for card summaries.
     // We load the last ~60 days to keep things bounded.

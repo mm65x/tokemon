@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, NaiveDate};
-use rusqlite::{params, types::Value, Connection, Row};
+use rusqlite::{params, types::Value, Connection, OpenFlags, Row};
 
 use std::borrow::Cow;
 
@@ -12,6 +12,7 @@ use crate::paths;
 use crate::types::Record;
 
 const DB_FILENAME: &str = "usage.db";
+const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Cache {
     conn: Connection,
@@ -19,15 +20,37 @@ pub struct Cache {
 
 impl Cache {
     pub fn open() -> crate::error::Result<Self> {
-        let db_path = Self::db_path();
+        Self::open_with_busy_timeout(DEFAULT_BUSY_TIMEOUT)
+    }
+
+    /// Open the writable cache with a caller-selected lock wait.
+    ///
+    /// Interactive callers use a short timeout so a cache lock cannot freeze
+    /// the UI, while batch commands retain the normal five-second timeout.
+    pub(crate) fn open_with_busy_timeout(busy_timeout: Duration) -> crate::error::Result<Self> {
+        Self::open_writable_path(&Self::db_path(), busy_timeout)
+    }
+
+    /// Open the existing cache for reads without taking a write lock.
+    ///
+    /// This deliberately skips schema creation and the writable canary. The
+    /// writable open performed by the refresh path owns those responsibilities.
+    #[allow(dead_code)]
+    pub(crate) fn open_read_only_with_busy_timeout(
+        busy_timeout: Duration,
+    ) -> crate::error::Result<Self> {
+        Self::open_read_only_path(&Self::db_path(), busy_timeout)
+    }
+
+    fn open_writable_path(db_path: &Path, busy_timeout: Duration) -> crate::error::Result<Self> {
         if let Some(parent) = db_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(&db_path)?;
+        let conn = Connection::open(db_path)?;
 
         // Set busy timeout FIRST — before any other operation that could
         // encounter a lock held by another process (e.g. the watcher thread).
-        conn.busy_timeout(Duration::from_secs(5))?;
+        conn.busy_timeout(busy_timeout)?;
 
         // Configure PRAGMAs individually so each one is fully processed.
         // PRAGMA journal_mode returns a result row — use pragma_update
@@ -54,6 +77,12 @@ impl Cache {
         cache.verify_writable()?;
 
         Ok(cache)
+    }
+
+    fn open_read_only_path(db_path: &Path, busy_timeout: Duration) -> crate::error::Result<Self> {
+        let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(busy_timeout)?;
+        Ok(Self { conn })
     }
 
     fn db_path() -> PathBuf {
@@ -526,6 +555,7 @@ pub fn file_mtime_secs_for_db(path: &Path) -> Option<i64> {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+    use std::time::Instant;
 
     /// Create an in-memory cache for testing.
     fn test_cache() -> Cache {
@@ -727,5 +757,45 @@ mod tests {
         let cache = test_cache();
         cache.init_schema().unwrap();
         cache.init_schema().unwrap();
+    }
+
+    #[test]
+    fn read_only_cache_remains_available_during_writer_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.db");
+        let writer = Cache::open_writable_path(&path, Duration::from_secs(1)).unwrap();
+        writer.conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+        let started = Instant::now();
+        let reader = Cache::open_read_only_path(&path, Duration::from_millis(50)).unwrap();
+        let records = reader.load_all_entries().unwrap();
+
+        assert!(records.is_empty());
+        assert!(started.elapsed() < Duration::from_secs(1));
+        writer.conn.execute_batch("ROLLBACK").unwrap();
+    }
+
+    #[test]
+    fn writable_cache_respects_short_busy_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("usage.db");
+        let writer = Cache::open_writable_path(&path, Duration::from_secs(1)).unwrap();
+        writer.conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+
+        let started = Instant::now();
+        let result = Cache::open_writable_path(&path, Duration::from_millis(50));
+
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_secs(1));
+        writer.conn.execute_batch("ROLLBACK").unwrap();
+    }
+
+    #[test]
+    fn read_only_open_does_not_create_a_missing_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("missing.db");
+
+        assert!(Cache::open_read_only_path(&path, Duration::from_millis(50)).is_err());
+        assert!(!path.exists());
     }
 }

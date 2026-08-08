@@ -1,0 +1,6 @@
+{"timestamp":"2026-07-24T10:30:00.000Z","eventName":"tokensGenerated","schema":"0.2.0","model":"claude-sonnet-4","provider":"anthropic","promptTokens":1234,"generatedTokens":321}
+{"timestamp":"2026-07-24T11:00:00+00:00","eventName":"tokensGenerated","schema":"0.2.0","model":"gemini-2.5-pro","provider":"vertexai","promptTokens":800,"generatedTokens":200}
+{"timestamp":"2026-07-24T11:10:00Z","eventName":"autocomplete","schema":"0.2.0","model":"ignored","provider":"custom"}
+{"timestamp":"not-a-timestamp","eventName":"tokensGenerated","schema":"0.2.0","model":"gpt-4o","provider":"openai","promptTokens":100,"generatedTokens":50}
+{"timestamp":"2026-07-24T12:00:00Z","eventName":"tokensGenerated","schema":"0.2.0","model":"ignored","provider":"custom","promptTokens":0,"generatedTokens":0}
+{"timestamp":"2026-07-24T12:30:00Z","promptTokens":1,"generatedTokens":

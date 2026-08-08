@@ -27,6 +27,13 @@ pub fn cache_dir() -> PathBuf {
     )
 }
 
+pub fn config_dir() -> PathBuf {
+    directories::ProjectDirs::from("", "", "tokemon").map_or_else(
+        || home_dir().join(".config/tokemon"),
+        |d| d.config_dir().to_path_buf(),
+    )
+}
+
 pub fn vscode_global_storage_dirs() -> Vec<PathBuf> {
     let base = if cfg!(target_os = "macos") {
         home_dir().join("Library/Application Support")

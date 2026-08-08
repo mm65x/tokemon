@@ -43,7 +43,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     if !app.applied_filter.is_empty() {
         spans.push(Span::styled("filter:", theme::status_key()));
         spans.push(Span::styled(
-            format!("{} ", &app.applied_filter),
+            format!("{} ", app.applied_filter),
             Style::default().fg(theme::YELLOW).bg(theme::SURFACE),
         ));
         spans.push(Span::styled(" │ ", theme::status_bar()));

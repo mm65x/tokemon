@@ -175,6 +175,7 @@ pub struct ColumnConfig {
     pub output: bool,
     pub cache_write: bool,
     pub cache_read: bool,
+    pub requests: bool,
     pub total_tokens: bool,
     pub cost: bool,
 }
@@ -214,6 +215,7 @@ impl Default for ColumnConfig {
             output: true,
             cache_write: true,
             cache_read: true,
+            requests: true,
             total_tokens: true,
             cost: true,
         }
@@ -351,12 +353,28 @@ mod tests {
         assert!(config.columns.output);
         assert!(config.columns.cache_write);
         assert!(config.columns.cache_read);
+        assert!(config.columns.requests);
         assert!(config.columns.total_tokens);
         assert!(config.columns.cost);
 
         assert!(config.budget.daily.is_none());
         assert!(config.budget.weekly.is_none());
         assert!(config.budget.monthly.is_none());
+    }
+
+    #[test]
+    fn existing_column_config_defaults_new_visibility_fields() {
+        let config: Config = toml::from_str(
+            r#"
+            [columns]
+            cost = false
+            "#,
+        )
+        .expect("existing config should deserialize");
+
+        assert!(config.columns.requests);
+        assert!(config.columns.total_tokens);
+        assert!(!config.columns.cost);
     }
 
     #[test]

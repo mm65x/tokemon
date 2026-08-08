@@ -14,9 +14,9 @@ use crate::{cache, cost, dedup, rollup};
 
 use super::diff::{self, RowKey};
 use super::event::Event;
+use super::views::dashboard::{self, MouseAction};
 use super::widgets::heatmap::{self, HeatmapDay};
 use super::widgets::spike_chart::{self, SpikeSeries};
-use super::views::dashboard::{self, MouseAction};
 
 /// Duration (in seconds) for the per-cell highlight fade animation.
 const HIGHLIGHT_DURATION_SECS: f64 = 1.5;

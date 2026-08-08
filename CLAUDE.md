@@ -65,7 +65,7 @@ Creates a GitHub Release marked as pre-release. Does NOT publish to crates.io.
 ## Code Conventions
 
 - **New JSONL sources**: Implement `JsonlSourceConfig` (~15 lines) and use `JsonlSource<C>` from `source/jsonl_source.rs`
-- **Cline-derived sources**: Use `ClineFormat` from `source/cline_format.rs`
+- **Cline-derived sources**: Implement `ClineSourceConfig` and use `ClineDerivedSource<C>` from `source/cline_format.rs`
 - **SQLite sources**: See `source/opencode.rs` for the pattern — open read-only, busy_timeout, `json_extract` for JSON columns
 - **Timestamps**: Always use `timestamp::parse_timestamp()`, never inline parsing
 - **File discovery**: Each `Source` implements `discover_files()` using helpers from `source/discover.rs` (`collect_by_ext`, `walk_by_ext`). No glob crate — use bounded `read_dir` walking only.

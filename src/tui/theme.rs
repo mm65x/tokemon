@@ -112,10 +112,8 @@ pub fn cost_color(cost: f64) -> Color {
     }
 }
 
-/// Cost styling based on value.
-#[must_use]
-
 /// Token foreground color based on value (dim for zeros).
+#[must_use]
 pub fn tokens_color(n: u64) -> Color {
     if n == 0 {
         DIM
@@ -124,10 +122,8 @@ pub fn tokens_color(n: u64) -> Color {
     }
 }
 
-/// Token count styling — dim for zeros.
-#[must_use]
-
 /// Surface panel style (for cards).
+#[must_use]
 pub fn card() -> Style {
     Style::default().fg(FG).bg(SURFACE)
 }

@@ -74,7 +74,8 @@ pub fn display_model(raw: &str) -> String {
 /// and dot-based prefixes (`vertexai.`, `anthropic.`).
 ///
 /// Returns a `&str` borrowed from the input — no allocation.
-fn strip_routing_prefix(raw: &str) -> &str {
+#[must_use]
+pub(crate) fn strip_routing_prefix(raw: &str) -> &str {
     // Strip @... deployment suffix
     let raw = raw.split('@').next().unwrap_or(raw);
     // Strip slash-based prefixes (e.g., "bedrock/", "openai/")

@@ -112,10 +112,29 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                         0.0
                     };
 
+                    // Columns depend on group-by mode (same as normal view)
+                    let (name_col, api_col, client_col) = match app.group_by {
+                        crate::types::GroupBy::Model => (
+                            format!("  {}", display::display_model(&mu.model)),
+                            display::infer_api_provider(mu.effective_raw_model()).to_string(),
+                            String::new(),
+                        ),
+                        crate::types::GroupBy::ModelClient => (
+                            format!("  {}", display::display_model(&mu.model)),
+                            display::infer_api_provider(mu.effective_raw_model()).to_string(),
+                            display::display_client(&mu.provider).into_owned(),
+                        ),
+                        crate::types::GroupBy::Client => (
+                            format!("  {}", display::display_client(&mu.provider)),
+                            String::new(),
+                            String::new(),
+                        ),
+                    };
+
                     let sub_cells = cols.build_row(
-                        &format!("  {}", display::display_model(&mu.model)),
-                        display::infer_api_provider(mu.effective_raw_model()),
-                        "",
+                        &name_col,
+                        &api_col,
+                        &client_col,
                         mu.request_count,
                         mu.input_tokens,
                         mu.output_tokens,
@@ -210,6 +229,8 @@ struct ColumnSet {
     show_input: bool,
     show_output: bool,
     show_requests: bool,
+    show_total: bool,
+    show_cost: bool,
 }
 
 impl ColumnSet {
@@ -219,9 +240,11 @@ impl ColumnSet {
         Self {
             show_api: self.show_api && cfg.api_provider,
             show_client: self.show_client && cfg.client,
-            show_requests: self.show_requests,
+            show_requests: self.show_requests && cfg.requests,
             show_input: self.show_input && cfg.input,
             show_output: self.show_output && cfg.output,
+            show_total: self.show_total && cfg.total_tokens,
+            show_cost: self.show_cost && cfg.cost,
         }
     }
 
@@ -242,8 +265,12 @@ impl ColumnSet {
         if self.show_output {
             h.push("Output".to_string());
         }
-        h.push("Total".to_string());
-        h.push("Cost".to_string());
+        if self.show_total {
+            h.push("Total".to_string());
+        }
+        if self.show_cost {
+            h.push("Cost".to_string());
+        }
         h
     }
 
@@ -264,8 +291,12 @@ impl ColumnSet {
         if self.show_output {
             w.push(Constraint::Length(8));
         }
-        w.push(Constraint::Length(8)); // Total
-        w.push(Constraint::Length(10)); // Cost
+        if self.show_total {
+            w.push(Constraint::Length(8));
+        }
+        if self.show_cost {
+            w.push(Constraint::Length(10));
+        }
         w
     }
 
@@ -335,23 +366,27 @@ impl ColumnSet {
             cells.push(Cell::from(Span::styled(s, style)));
         }
 
-        let total_s = format_tokens_short(total);
-        let normal_total = if use_color {
-            base_style.fg(theme::tokens_color(total))
-        } else {
-            base_style
-        };
-        let total_style = apply_highlight(normal_total, highlight_intensity);
-        cells.push(Cell::from(Span::styled(total_s, total_style)));
+        if self.show_total {
+            let total_s = format_tokens_short(total);
+            let normal_total = if use_color {
+                base_style.fg(theme::tokens_color(total))
+            } else {
+                base_style
+            };
+            let total_style = apply_highlight(normal_total, highlight_intensity);
+            cells.push(Cell::from(Span::styled(total_s, total_style)));
+        }
 
-        let cost_s = format_cost(cost);
-        let normal_cost = if use_color {
-            base_style.fg(theme::cost_color(cost))
-        } else {
-            base_style
-        };
-        let cost_style = apply_highlight(normal_cost, highlight_intensity);
-        cells.push(Cell::from(Span::styled(cost_s, cost_style)));
+        if self.show_cost {
+            let cost_s = format_cost(cost);
+            let normal_cost = if use_color {
+                base_style.fg(theme::cost_color(cost))
+            } else {
+                base_style
+            };
+            let cost_style = apply_highlight(normal_cost, highlight_intensity);
+            cells.push(Cell::from(Span::styled(cost_s, cost_style)));
+        }
 
         cells
     }
@@ -382,11 +417,15 @@ impl ColumnSet {
         if self.show_output {
             cells.push(Cell::from(Span::styled("", style)));
         }
-        cells.push(Cell::from(Span::styled(
-            format_tokens_short(total_tokens),
-            style,
-        )));
-        cells.push(Cell::from(Span::styled(format_cost(total_cost), style)));
+        if self.show_total {
+            cells.push(Cell::from(Span::styled(
+                format_tokens_short(total_tokens),
+                style,
+            )));
+        }
+        if self.show_cost {
+            cells.push(Cell::from(Span::styled(format_cost(total_cost), style)));
+        }
         cells
     }
 }
@@ -400,6 +439,8 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: true,
             show_input: true,
             show_output: true,
+            show_total: true,
+            show_cost: true,
         }
     } else if width >= 70 {
         ColumnSet {
@@ -408,6 +449,8 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: true,
             show_input: true,
             show_output: true,
+            show_total: true,
+            show_cost: true,
         }
     } else if width >= 56 {
         ColumnSet {
@@ -416,6 +459,8 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: true,
             show_input: true,
             show_output: true,
+            show_total: true,
+            show_cost: true,
         }
     } else if width >= 42 {
         ColumnSet {
@@ -424,6 +469,8 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: true,
             show_input: false,
             show_output: false,
+            show_total: true,
+            show_cost: true,
         }
     } else {
         ColumnSet {
@@ -432,6 +479,8 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: false,
             show_input: false,
             show_output: false,
+            show_total: true,
+            show_cost: true,
         }
     }
 }
@@ -445,4 +494,61 @@ fn apply_highlight(normal: Style, intensity: f64) -> Style {
     // Extract the foreground colour from the normal style, defaulting to FG
     let normal_fg = normal.fg.unwrap_or(theme::FG);
     theme::highlight_cell(intensity, normal_fg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn masks_metric_columns_with_persisted_visibility() {
+        let mut config = ColumnConfig::default();
+        config.requests = false;
+        config.total_tokens = false;
+        config.cost = false;
+
+        let columns = choose_columns(100).mask(&config);
+
+        assert_eq!(
+            columns.headers(),
+            ["Model", "API", "Client", "Input", "Output"]
+        );
+        assert_eq!(columns.headers().len(), columns.widths().len());
+    }
+
+    #[test]
+    fn narrow_layout_still_applies_visibility_choices() {
+        let mut config = ColumnConfig::default();
+        config.cost = false;
+
+        let columns = choose_columns(30).mask(&config);
+
+        assert_eq!(columns.headers(), ["Model", "Total"]);
+        assert_eq!(columns.headers().len(), columns.widths().len());
+    }
+
+    #[test]
+    fn row_and_total_cells_match_visible_headers() {
+        let mut config = ColumnConfig::default();
+        config.total_tokens = false;
+        let columns = choose_columns(100).mask(&config);
+
+        let row = columns.build_row(
+            "model",
+            "api",
+            "client",
+            1,
+            2,
+            3,
+            5,
+            0.1,
+            Style::default(),
+            false,
+            0.0,
+        );
+        let total = columns.build_total_row(1, 5, 0.1);
+
+        assert_eq!(row.len(), columns.headers().len());
+        assert_eq!(total.len(), columns.headers().len());
+    }
 }

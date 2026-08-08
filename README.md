@@ -207,29 +207,36 @@ make ci            # Run all checks (fmt + lint + test)
 
 ```
 src/
-├── main.rs              # CLI entry, command dispatch, cache-aware parsing
+├── main.rs              # CLI entry and command dispatch
+├── lib.rs               # Library entry point
 ├── cli.rs               # clap argument definitions
 ├── config.rs            # TOML config loading and validation
-├── types.rs             # Core data types (Record, Report, etc.)
+├── types.rs             # Core data types (Record, ModelUsage, etc.)
 ├── error.rs             # Error types
 ├── cache.rs             # SQLite cache layer
+├── pipeline.rs          # Shared data loading orchestration (used by CLI and MCP)
 ├── display.rs           # Name translation (client, model, API provider)
 ├── pacemaker.rs         # Budget tracking and limits
 ├── timestamp.rs         # Shared timestamp parsing
-├── cost.rs              # LiteLLM cost calculation engine
+├── cost.rs              # Pricing engine
 ├── rollup.rs            # Daily/weekly/monthly grouping
 ├── dedup.rs             # Hash-based deduplication
-├── render.rs            # Table and JSON rendering with responsive columns
+├── render/              # Table, CSV, and JSON rendering
+├── tui/                 # Terminal UI dashboard (`tokemon top`)
+│   ├── app.rs           # Core state and event loop
+│   ├── watcher.rs       # Background file modification watcher
+│   ├── settings_state.rs# Configuration settings state
+│   ├── sparkline_data.rs# Rendering sparklines
+│   ├── theme.rs         # TUI color palette
+│   └── widgets/         # TUI components (usage table, summary cards)
 ├── mcp.rs               # MCP server (Model Context Protocol)
 ├── paths.rs             # Platform-specific path resolution
 └── source/
     ├── mod.rs            # Source trait and SourceSet
     ├── discover.rs       # Bounded read_dir file discovery utilities
-    ├── jsonl_source.rs   # Generic JSONL source (4 sources use this)
-    ├── cline_format.rs   # Shared Cline-format parser (3 sources use this)
-    ├── claude_code.rs    # Claude Code parser (structural discovery)
-    ├── codex.rs          # Codex CLI parser (state machine, YYYY/MM/DD nav)
-    └── ...               # One file per source
+    ├── jsonl_source.rs   # Generic JSONL source
+    ├── cline_format.rs   # Shared Cline-format parser
+    └── ...               # One file per provider
 ```
 
 ## License

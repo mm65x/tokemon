@@ -112,11 +112,6 @@ impl PricingEngine {
         }
     }
 
-    /// Returns `true` if the engine has any pricing data loaded.
-    pub fn is_empty(&self) -> bool {
-        self.models.is_empty()
-    }
-
     /// Apply costs to all entries in-place, caching pricing lookups per model.
     pub fn apply_costs(&self, entries: &mut [Record]) {
         use std::collections::HashMap;
@@ -163,64 +158,50 @@ impl PricingEngine {
         }
     }
 
-    /// Three-level model matching
+    /// Resolve model pricing, preferring an explicit Vertex route.
     fn find_pricing(&self, model: &str) -> Option<&ModelPricing> {
-        // Strip source-level provider prefix (e.g., "vertexai." from Vertex AI detection)
-        // so that the model name is clean for lookup against litellm pricing data.
-        let model = model.strip_prefix("vertexai.").unwrap_or(model);
+        let (route, plain_model) = split_pricing_route(model);
+        let normalized = normalize_model_name(plain_model);
+        let mut candidates = Vec::with_capacity(10);
 
-        // 1. Exact match
-        if let Some(p) = self.models.get(model) {
-            return Some(p);
+        if let Some(provider) = route {
+            push_model_candidates(&mut candidates, Some(provider), plain_model, &normalized);
+        }
+        push_model_candidates(&mut candidates, None, plain_model, &normalized);
+
+        for provider in ordered_provider_prefixes(route, &normalized) {
+            push_model_candidates(&mut candidates, Some(provider), plain_model, &normalized);
         }
 
-        // 2. Normalized match (strip date suffix, lowercase)
-        let normalized = normalize_model_name(model);
-        if let Some(p) = self.models.get(&normalized) {
-            return Some(p);
-        }
-
-        // 3. Try with common provider prefixes
-        let prefixed_variants = [
-            format!("anthropic/{model}"),
-            format!("anthropic/{normalized}"),
-            format!("openai/{model}"),
-            format!("openai/{normalized}"),
-            format!("google/{model}"),
-            format!("google/{normalized}"),
-            format!("vertex_ai/{model}"),
-            format!("vertex_ai/{normalized}"),
-        ];
-        for variant in &prefixed_variants {
-            if let Some(p) = self.models.get(variant.as_str()) {
-                return Some(p);
+        for candidate in candidates {
+            if let Some(pricing) = self.models.get(&candidate) {
+                return Some(pricing);
             }
         }
 
-        // 4. Prefix match - longest match wins, requires word boundary
-        let mut best_match: Option<&ModelPricing> = None;
-        let mut best_len: usize = 0;
-
-        for (key, pricing) in &self.models {
-            let plain_key = key.split('/').next_back().unwrap_or(key);
-            let norm_key = normalize_model_name(plain_key);
-
-            // Only match if our model starts with the pricing key
-            // AND the match ends at a word boundary (delimiter or end of string)
-            if normalized.starts_with(&norm_key) && norm_key.len() > best_len {
-                let at_boundary = normalized.len() == norm_key.len()
-                    || matches!(
-                        normalized.as_bytes().get(norm_key.len()),
-                        Some(b'-' | b'_' | b'.')
-                    );
-                if at_boundary {
-                    best_match = Some(pricing);
-                    best_len = norm_key.len();
-                }
-            }
-        }
-
-        best_match
+        // Fall back to a deterministic longest-prefix match. Provider rank
+        // breaks ties so an explicit route cannot select another provider's
+        // otherwise-equivalent entry.
+        let mut matches: Vec<(&str, &ModelPricing, usize, usize)> = self
+            .models
+            .iter()
+            .filter_map(|(key, pricing)| {
+                let (key_route, plain_key) = split_pricing_route(key);
+                let normalized_key = normalize_model_name(plain_key);
+                model_prefix_matches(&normalized, &normalized_key).then_some((
+                    key.as_str(),
+                    pricing,
+                    normalized_key.len(),
+                    provider_rank(route, &normalized, key_route),
+                ))
+            })
+            .collect();
+        matches.sort_unstable_by(|a, b| {
+            b.2.cmp(&a.2)
+                .then_with(|| a.3.cmp(&b.3))
+                .then_with(|| a.0.cmp(b.0))
+        });
+        matches.first().map(|(_, pricing, _, _)| *pricing)
     }
 
     fn cache_path() -> PathBuf {
@@ -320,9 +301,92 @@ impl ModelPricing {
 }
 
 fn normalize_model_name(model: &str) -> String {
-    let s = model.to_lowercase();
+    let s = strip_deployment_suffix(model).to_lowercase();
     let stripped = crate::display::strip_date_suffix(&s);
     stripped.replace('.', "-")
+}
+
+const PRICING_PROVIDERS: [&str; 4] = ["anthropic", "openai", "google", "vertex_ai"];
+
+fn split_pricing_route(model: &str) -> (Option<&str>, &str) {
+    let route =
+        (model.starts_with("vertexai.") || model.starts_with("vertex_ai/")).then_some("vertex_ai");
+    (route, crate::display::strip_routing_prefix(model))
+}
+
+fn strip_deployment_suffix(model: &str) -> &str {
+    model.split('@').next().unwrap_or(model)
+}
+
+fn push_model_candidates(
+    candidates: &mut Vec<String>,
+    provider: Option<&str>,
+    model: &str,
+    normalized: &str,
+) {
+    for variant in [model, normalized] {
+        let candidate = provider.map_or_else(
+            || variant.to_string(),
+            |provider| format!("{provider}/{variant}"),
+        );
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+}
+
+fn ordered_provider_prefixes(route: Option<&str>, normalized_model: &str) -> Vec<&'static str> {
+    let inferred = infer_pricing_provider(normalized_model);
+    let mut providers = Vec::with_capacity(PRICING_PROVIDERS.len());
+
+    if let Some(provider) = inferred {
+        providers.push(provider);
+    }
+    for provider in PRICING_PROVIDERS {
+        if Some(provider) != route && !providers.contains(&provider) {
+            providers.push(provider);
+        }
+    }
+
+    providers
+}
+
+fn infer_pricing_provider(model: &str) -> Option<&'static str> {
+    if model.starts_with("claude-") {
+        Some("anthropic")
+    } else if model.starts_with("gpt-")
+        || model.starts_with("o1-")
+        || model.starts_with("o3-")
+        || model.starts_with("o4-")
+    {
+        Some("openai")
+    } else if model.starts_with("gemini-") || model.starts_with("gemma-") {
+        Some("google")
+    } else {
+        None
+    }
+}
+
+fn model_prefix_matches(model: &str, prefix: &str) -> bool {
+    model.starts_with(prefix)
+        && (model.len() == prefix.len()
+            || matches!(model.as_bytes().get(prefix.len()), Some(b'-' | b'_' | b'.')))
+}
+
+fn provider_rank(route: Option<&str>, model: &str, candidate_route: Option<&str>) -> usize {
+    if let Some(expected) = route {
+        return match candidate_route {
+            Some(actual) if expected == actual => 0,
+            None => 1,
+            Some(_) => 2,
+        };
+    }
+
+    match candidate_route {
+        Some(actual) if Some(actual) == infer_pricing_provider(model) => 0,
+        None => 1,
+        Some(_) => 2,
+    }
 }
 
 #[cfg(test)]
@@ -364,10 +428,21 @@ mod tests {
         }
     }
 
+    const ROUTED_PRICING_JSON: &str = r#"{
+        "claude-opus-5": {
+            "input_cost_per_token": 0.000005,
+            "output_cost_per_token": 0.000025
+        },
+        "vertex_ai/claude-opus-5": {
+            "input_cost_per_token": 0.000007,
+            "output_cost_per_token": 0.000035
+        }
+    }"#;
+
     #[test]
     fn test_parse_pricing_valid_json() {
         let engine = PricingEngine::parse_pricing(DUMMY_JSON).expect("Failed to parse dummy JSON");
-        assert!(!engine.is_empty());
+        assert!(!engine.models.is_empty());
         assert_eq!(engine.models.len(), 3);
 
         let model_a = engine.models.get("model-a").expect("model-a missing");
@@ -439,6 +514,30 @@ mod tests {
     }
 
     #[test]
+    fn test_claude_wrapper_variants_resolve_equivalently() {
+        let engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+        let expected = engine
+            .find_pricing("claude-3-5-sonnet-20241022")
+            .expect("plain model should resolve");
+
+        for model in [
+            "anthropic/claude-3-5-sonnet-20241022",
+            "vertexai.claude-3-5-sonnet-20241022",
+            "bedrock/anthropic.claude-3-5-sonnet-20241022",
+            "azure/anthropic.claude-3-5-sonnet-20241022",
+            "openai/claude-3-5-sonnet-20241022",
+        ] {
+            let resolved = engine
+                .find_pricing(model)
+                .unwrap_or_else(|| panic!("{model} should resolve"));
+            assert!(
+                std::ptr::eq(resolved, expected),
+                "{model} should resolve to the same pricing entry"
+            );
+        }
+    }
+
+    #[test]
     fn test_find_pricing_longest_prefix() {
         let engine = PricingEngine::parse_pricing(
             r#"{
@@ -459,6 +558,79 @@ mod tests {
             .find_pricing("gpt-4-32k-0613")
             .expect("should prefix match gpt-4-32k");
         assert_eq!(p2.input_cost_per_token, Some(0.06));
+    }
+
+    #[test]
+    fn test_vertex_route_prefers_provider_specific_pricing() {
+        let engine = PricingEngine::parse_pricing(ROUTED_PRICING_JSON).unwrap();
+
+        let direct = engine
+            .find_pricing("claude-opus-5")
+            .expect("generic model should resolve");
+        assert_eq!(direct.input_cost_per_token, Some(0.000005));
+
+        let routed = engine
+            .find_pricing("vertexai.claude-opus-5")
+            .expect("routed model should resolve");
+        assert_eq!(routed.input_cost_per_token, Some(0.000007));
+    }
+
+    #[test]
+    fn test_vertex_routed_record_gets_provider_specific_cost() {
+        use chrono::Utc;
+        use std::borrow::Cow;
+
+        let engine = PricingEngine::parse_pricing(ROUTED_PRICING_JSON).unwrap();
+        let mut records = [Record {
+            timestamp: Utc::now(),
+            provider: Cow::Borrowed("test"),
+            model: Some("vertexai.claude-opus-5".to_string()),
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            thinking_tokens: 0,
+            cost_usd: Some(0.0),
+            message_id: None,
+            request_id: None,
+            session_id: None,
+        }];
+
+        engine.apply_costs(&mut records);
+
+        assert_eq!(records[0].cost_usd, Some(42.0));
+    }
+
+    #[test]
+    fn test_vertex_route_normalizes_deployment_alias() {
+        let engine = PricingEngine::parse_pricing(ROUTED_PRICING_JSON).unwrap();
+
+        let routed = engine
+            .find_pricing("vertexai.claude-opus-5@default")
+            .expect("deployment alias should resolve");
+        assert_eq!(routed.output_cost_per_token, Some(0.000035));
+    }
+
+    #[test]
+    fn test_vertex_route_deterministically_prefers_provider_fallback() {
+        let engine = PricingEngine::parse_pricing(
+            r#"{
+                "anthropic/claude-opus-5-20260724": {
+                    "input_cost_per_token": 0.000005
+                },
+                "vertex_ai/claude-opus-5@20260724": {
+                    "input_cost_per_token": 0.000007
+                }
+            }"#,
+        )
+        .unwrap();
+
+        for _ in 0..10 {
+            let routed = engine
+                .find_pricing("vertexai.claude-opus-5@default")
+                .expect("provider fallback should resolve");
+            assert_eq!(routed.input_cost_per_token, Some(0.000007));
+        }
     }
 
     #[test]

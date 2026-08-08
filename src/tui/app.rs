@@ -290,24 +290,11 @@ impl App {
             all_time_base_start_week: None,
             all_time_base_models: Vec::new(),
         };
-        // Load pricing engine once. Try offline first (fast path using
-        // cached pricing.json). If the cache doesn't exist yet (fresh
-        // install), fall back to a one-time online fetch if not in offline mode.
+        // Load pricing engine once. Online loading already uses a fresh cache
+        // without fetching, and refreshes stale data before falling back to it.
         if !config.no_cost {
-            match cost::PricingEngine::load(true) {
-                Ok(engine) => {
-                    if engine.is_empty() && !offline {
-                        match cost::PricingEngine::load(false) {
-                            Ok(online_engine) => app.pricing = Some(online_engine),
-                            Err(e) => {
-                                app.last_warning =
-                                    Some((format!("Pricing unavailable: {e}"), Instant::now()));
-                            }
-                        }
-                    } else {
-                        app.pricing = Some(engine);
-                    }
-                }
+            match cost::PricingEngine::load(offline) {
+                Ok(engine) => app.pricing = Some(engine),
                 Err(e) => {
                     app.last_warning = Some((format!("Pricing unavailable: {e}"), Instant::now()));
                 }

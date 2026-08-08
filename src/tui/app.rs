@@ -43,6 +43,8 @@ pub enum Scope {
 }
 
 impl Scope {
+    pub const ALL: [Self; 4] = [Self::Today, Self::Week, Self::Month, Self::AllTime];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -63,11 +65,66 @@ impl Scope {
             Self::AllTime => NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         }
     }
+
+    #[must_use]
+    pub(crate) const fn card_index(self) -> usize {
+        match self {
+            Self::Today => 0,
+            Self::Week => 1,
+            Self::Month => 2,
+            Self::AllTime => 3,
+        }
+    }
+
+    #[must_use]
+    const fn from_card_toggle_key(key: char) -> Option<Self> {
+        match key {
+            'T' => Some(Self::Today),
+            'W' => Some(Self::Week),
+            'M' => Some(Self::Month),
+            'A' => Some(Self::AllTime),
+            _ => None,
+        }
+    }
 }
 
 // ── Summary card data ─────────────────────────────────────────────────────
 
-/// Data for one summary card (Today / This Week / This Month).
+/// Session-only visibility state for the four summary cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SummaryCardVisibility {
+    visible: [bool; 4],
+}
+
+impl Default for SummaryCardVisibility {
+    fn default() -> Self {
+        Self { visible: [true; 4] }
+    }
+}
+
+impl SummaryCardVisibility {
+    pub const fn toggle(&mut self, scope: Scope) {
+        let index = scope.card_index();
+        self.visible[index] = !self.visible[index];
+    }
+
+    #[must_use]
+    pub const fn is_visible(self, scope: Scope) -> bool {
+        self.visible[scope.card_index()]
+    }
+
+    #[must_use]
+    pub fn any_visible(self) -> bool {
+        self.visible.iter().any(|visible| *visible)
+    }
+
+    #[must_use]
+    pub fn visible_count(self) -> usize {
+        self.visible.iter().filter(|visible| **visible).count()
+    }
+}
+
+/// Data for one summary card (Today / This Week / This Month / All Time).
 #[derive(Debug, Clone)]
 pub struct CardData {
     pub label: &'static str,
@@ -165,6 +222,8 @@ pub struct App {
     pub show_history: bool,
     /// Summary cards: Today, This Week, This Month, All Time.
     pub cards: [CardData; 4],
+    /// Which summary cards are visible for this TUI session.
+    pub card_visibility: SummaryCardVisibility,
     /// Detail table rows for the selected scope.
     pub detail_models: Vec<ModelUsage>,
     /// Detail totals.
@@ -274,6 +333,7 @@ impl App {
                     trend: 0,
                 },
             ],
+            card_visibility: SummaryCardVisibility::default(),
             detail_models: Vec::new(),
             detail_total_cost: 0.0,
             detail_total_tokens: 0,
@@ -390,12 +450,13 @@ impl App {
         }
 
         let hover_changed = self.set_hover(dashboard::hover_target(terminal_area, self, mouse));
-        let action_changed = match dashboard::mouse_action(terminal_area, mouse) {
-            Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
-            Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
-            Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
-            None => false,
-        };
+        let action_changed =
+            match dashboard::mouse_action(terminal_area, self.card_visibility, mouse) {
+                Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
+                Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
+                Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
+                None => false,
+            };
         hover_changed || action_changed
     }
 
@@ -440,6 +501,13 @@ impl App {
         // Filter input mode
         if self.filter_active {
             return self.handle_filter_key(key);
+        }
+
+        if let KeyCode::Char(c) = key.code {
+            if let Some(scope) = Scope::from_card_toggle_key(c) {
+                self.card_visibility.toggle(scope);
+                return true;
+            }
         }
 
         match key.code {
@@ -1159,5 +1227,49 @@ mod tests {
         let details = vec![ModelUsage::default(); 4];
         let history = vec![summary(2)];
         assert_eq!(table_row_count(&details, &history, false), 5);
+    }
+
+    #[test]
+    fn summary_cards_start_visible_and_toggle_independently() {
+        let mut visibility = SummaryCardVisibility::default();
+        assert_eq!(visibility.visible_count(), 4);
+        assert!(Scope::ALL
+            .into_iter()
+            .all(|scope| visibility.is_visible(scope)));
+
+        visibility.toggle(Scope::Week);
+        visibility.toggle(Scope::AllTime);
+
+        assert!(visibility.is_visible(Scope::Today));
+        assert!(!visibility.is_visible(Scope::Week));
+        assert!(visibility.is_visible(Scope::Month));
+        assert!(!visibility.is_visible(Scope::AllTime));
+        assert_eq!(visibility.visible_count(), 2);
+
+        visibility.toggle(Scope::Week);
+        assert!(visibility.is_visible(Scope::Week));
+        assert_eq!(visibility.visible_count(), 3);
+    }
+
+    #[test]
+    fn all_summary_cards_can_be_hidden() {
+        let mut visibility = SummaryCardVisibility::default();
+        for scope in Scope::ALL {
+            visibility.toggle(scope);
+        }
+
+        assert!(!visibility.any_visible());
+        assert_eq!(visibility.visible_count(), 0);
+    }
+
+    #[test]
+    fn only_uppercase_scope_keys_toggle_cards() {
+        assert_eq!(Scope::from_card_toggle_key('T'), Some(Scope::Today));
+        assert_eq!(Scope::from_card_toggle_key('W'), Some(Scope::Week));
+        assert_eq!(Scope::from_card_toggle_key('M'), Some(Scope::Month));
+        assert_eq!(Scope::from_card_toggle_key('A'), Some(Scope::AllTime));
+        assert_eq!(Scope::from_card_toggle_key('t'), None);
+        assert_eq!(Scope::from_card_toggle_key('w'), None);
+        assert_eq!(Scope::from_card_toggle_key('x'), None);
     }
 }

@@ -3,7 +3,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::Block;
 use ratatui::Frame;
 
-use crate::tui::app::{App, HoverTarget};
+use crate::tui::app::{App, HoverTarget, SummaryCardVisibility};
 use crate::tui::theme;
 use crate::tui::views::{help, settings};
 use crate::tui::widgets::{header, status_bar, summary_cards, usage_table};
@@ -24,15 +24,6 @@ pub(crate) struct DashboardLayout {
 }
 
 /// Render the complete dashboard view.
-///
-/// Layout:
-/// ```text
-/// ┌────────────── header (1 line) ──────────────┐
-/// ├──────────── summary cards (7 lines) ────────┤
-/// ├────────── usage table (flexible) ───────────┤
-/// ├────────────── status bar (1 line) ──────────┤
-/// └─────────────────────────────────────────────┘
-/// ```
 pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
@@ -40,12 +31,12 @@ pub fn render(frame: &mut Frame, app: &App) {
     let bg = Block::default().style(theme::text());
     frame.render_widget(bg, area);
 
-    let layout = dashboard_layout(area);
+    let layout = dashboard_layout(area, app.card_visibility.any_visible());
 
     // Header
     header::render(frame, layout.header, app);
 
-    // Summary cards (if space)
+    // Summary cards (if space and at least one card is visible)
     if let Some(cards_area) = layout.summary_cards {
         summary_cards::render(frame, cards_area, app);
     }
@@ -65,17 +56,23 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 }
 
-/// Calculate the dashboard regions used by both rendering and mouse hit-testing.
 #[must_use]
-pub(crate) fn dashboard_layout(area: Rect) -> DashboardLayout {
-    let card_height = if area.height >= 30 {
+const fn summary_card_height(terminal_height: u16, has_visible_cards: bool) -> u16 {
+    if !has_visible_cards {
+        0
+    } else if terminal_height >= 30 {
         7
-    } else if area.height >= 20 {
+    } else if terminal_height >= 20 {
         5
     } else {
         0
-    };
+    }
+}
 
+/// Calculate the dashboard regions used by both rendering and mouse hit-testing.
+#[must_use]
+pub(crate) fn dashboard_layout(area: Rect, cards_visible: bool) -> DashboardLayout {
+    let card_height = summary_card_height(area.height, cards_visible);
     let mut constraints = vec![Constraint::Length(1)];
     if card_height > 0 {
         constraints.push(Constraint::Length(card_height));
@@ -105,13 +102,17 @@ pub(crate) fn dashboard_layout(area: Rect) -> DashboardLayout {
 
 /// Translate a raw mouse event into a dashboard action.
 #[must_use]
-pub(crate) fn mouse_action(area: Rect, event: MouseEvent) -> Option<MouseAction> {
-    let layout = dashboard_layout(area);
+pub(crate) fn mouse_action(
+    area: Rect,
+    visibility: SummaryCardVisibility,
+    event: MouseEvent,
+) -> Option<MouseAction> {
+    let layout = dashboard_layout(area, visibility.any_visible());
 
     match event.kind {
         MouseEventKind::Down(MouseButton::Left) => layout
             .summary_cards
-            .and_then(|cards| summary_cards::scope_at(cards, event.column, event.row))
+            .and_then(|cards| summary_cards::scope_at(cards, visibility, event.column, event.row))
             .map(MouseAction::SelectScope),
         MouseEventKind::ScrollUp if contains(layout.usage_table, event.column, event.row) => {
             Some(MouseAction::ScrollUp)
@@ -126,11 +127,14 @@ pub(crate) fn mouse_action(area: Rect, event: MouseEvent) -> Option<MouseAction>
 /// Resolve pointer movement to a rendered interactive region.
 #[must_use]
 pub(crate) fn hover_target(area: Rect, app: &App, event: MouseEvent) -> Option<HoverTarget> {
-    let layout = dashboard_layout(area);
+    let cards_visible = app.card_visibility.any_visible();
+    let layout = dashboard_layout(area, cards_visible);
 
     layout
         .summary_cards
-        .and_then(|cards| summary_cards::scope_at(cards, event.column, event.row))
+        .and_then(|cards| {
+            summary_cards::scope_at(cards, app.card_visibility, event.column, event.row)
+        })
         .map(HoverTarget::Card)
         .or_else(|| {
             usage_table::row_at(layout.usage_table, app, event.column, event.row)
@@ -150,8 +154,8 @@ mod tests {
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::layout::Rect;
 
-    use super::{dashboard_layout, mouse_action, MouseAction};
-    use crate::tui::app::Scope;
+    use super::{dashboard_layout, mouse_action, summary_card_height, MouseAction};
+    use crate::tui::app::{Scope, SummaryCardVisibility};
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {
@@ -163,18 +167,32 @@ mod tests {
     }
 
     #[test]
+    fn hidden_cards_reclaim_the_layout_space() {
+        assert_eq!(summary_card_height(40, false), 0);
+        assert_eq!(summary_card_height(25, false), 0);
+    }
+
+    #[test]
+    fn visible_cards_keep_responsive_height() {
+        assert_eq!(summary_card_height(30, true), 7);
+        assert_eq!(summary_card_height(20, true), 5);
+        assert_eq!(summary_card_height(19, true), 0);
+    }
+
+    #[test]
     fn dashboard_layout_uses_responsive_card_heights() {
-        let large = dashboard_layout(Rect::new(0, 0, 80, 30));
+        let visible = SummaryCardVisibility::default();
+        let large = dashboard_layout(Rect::new(0, 0, 80, 30), visible.any_visible());
         assert_eq!(large.summary_cards, Some(Rect::new(0, 1, 80, 7)));
         assert_eq!(large.usage_table, Rect::new(0, 8, 80, 21));
 
-        let medium = dashboard_layout(Rect::new(0, 0, 80, 20));
-        assert_eq!(medium.summary_cards, Some(Rect::new(0, 1, 80, 5)));
-        assert_eq!(medium.usage_table, Rect::new(0, 6, 80, 13));
-
-        let small = dashboard_layout(Rect::new(0, 0, 80, 19));
-        assert_eq!(small.summary_cards, None);
-        assert_eq!(small.usage_table, Rect::new(0, 1, 80, 17));
+        let mut hidden_visibility = SummaryCardVisibility::default();
+        for scope in Scope::ALL {
+            hidden_visibility.toggle(scope);
+        }
+        let hidden = dashboard_layout(Rect::new(0, 0, 80, 30), hidden_visibility.any_visible());
+        assert_eq!(hidden.summary_cards, None);
+        assert_eq!(hidden.usage_table, Rect::new(0, 1, 80, 28));
     }
 
     #[test]
@@ -182,17 +200,29 @@ mod tests {
         let area = Rect::new(0, 0, 80, 30);
 
         assert_eq!(
-            mouse_action(area, mouse(MouseEventKind::Down(MouseButton::Left), 45, 2)),
+            mouse_action(
+                area,
+                SummaryCardVisibility::default(),
+                mouse(MouseEventKind::Down(MouseButton::Left), 45, 2),
+            ),
             Some(MouseAction::SelectScope(Scope::Month))
         );
     }
 
     #[test]
     fn card_click_is_ignored_when_cards_are_not_rendered() {
-        let area = Rect::new(0, 0, 80, 19);
+        let area = Rect::new(0, 0, 80, 30);
 
+        let mut hidden = SummaryCardVisibility::default();
+        for scope in Scope::ALL {
+            hidden.toggle(scope);
+        }
         assert_eq!(
-            mouse_action(area, mouse(MouseEventKind::Down(MouseButton::Left), 5, 2)),
+            mouse_action(
+                area,
+                hidden,
+                mouse(MouseEventKind::Down(MouseButton::Left), 5, 2)
+            ),
             None
         );
     }
@@ -202,11 +232,19 @@ mod tests {
         let area = Rect::new(0, 0, 80, 30);
 
         assert_eq!(
-            mouse_action(area, mouse(MouseEventKind::ScrollDown, 10, 10)),
+            mouse_action(
+                area,
+                SummaryCardVisibility::default(),
+                mouse(MouseEventKind::ScrollDown, 10, 10),
+            ),
             Some(MouseAction::ScrollDown)
         );
         assert_eq!(
-            mouse_action(area, mouse(MouseEventKind::ScrollUp, 10, 2)),
+            mouse_action(
+                area,
+                SummaryCardVisibility::default(),
+                mouse(MouseEventKind::ScrollUp, 10, 2),
+            ),
             None
         );
     }
@@ -216,11 +254,19 @@ mod tests {
         let area = Rect::new(0, 0, 80, 30);
 
         assert_eq!(
-            mouse_action(area, mouse(MouseEventKind::Moved, 10, 10)),
+            mouse_action(
+                area,
+                SummaryCardVisibility::default(),
+                mouse(MouseEventKind::Moved, 10, 10),
+            ),
             None
         );
         assert_eq!(
-            mouse_action(area, mouse(MouseEventKind::Down(MouseButton::Right), 10, 2)),
+            mouse_action(
+                area,
+                SummaryCardVisibility::default(),
+                mouse(MouseEventKind::Down(MouseButton::Right), 10, 2),
+            ),
             None
         );
     }

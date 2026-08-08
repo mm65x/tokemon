@@ -4,23 +4,17 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Sparkline};
 use ratatui::Frame;
 
-use crate::tui::app::{App, HoverTarget, Scope};
+use crate::tui::app::{App, HoverTarget, Scope, SummaryCardVisibility};
 use crate::tui::theme;
 
-/// Render the four summary cards: Today, This Week, This Month, All Time.
-///
-/// Each card shows:
-/// - Label (highlighted if it matches the active scope)
-/// - Cost (large, bold)
-/// - Token count (secondary)
-/// - Sparkline (trend)
+/// Render the visible summary cards: Today, This Week, This Month, All Time.
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let show_sparklines = app.config.show_sparklines;
-    for (i, (scope, card_area)) in card_areas(area).into_iter().enumerate() {
+    for (scope, card_area) in visible_card_areas(area, app.card_visibility) {
         render_card(
             frame,
             card_area,
-            &app.cards[i],
+            &app.cards[scope.card_index()],
             scope == app.scope,
             matches!(app.hovered.as_ref(), Some(HoverTarget::Card(hovered)) if *hovered == scope),
             show_sparklines,
@@ -28,29 +22,32 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-/// Return the scope card rectangles in their rendered order.
-#[must_use]
-pub(crate) fn card_areas(area: Rect) -> [(Scope, Rect); 4] {
-    let [today, week, month, all_time] = Layout::horizontal([
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-    ])
-    .areas(area);
-
-    [
-        (Scope::Today, today),
-        (Scope::Week, week),
-        (Scope::Month, month),
-        (Scope::AllTime, all_time),
-    ]
+fn visible_card_areas(area: Rect, visibility: SummaryCardVisibility) -> Vec<(Scope, Rect)> {
+    let visible_scopes: Vec<Scope> = Scope::ALL
+        .into_iter()
+        .filter(|scope| visibility.is_visible(*scope))
+        .collect();
+    let count = visibility.visible_count();
+    if count == 0 {
+        return Vec::new();
+    }
+    let constraints = vec![Constraint::Ratio(1, count as u32); count];
+    let areas = Layout::horizontal(constraints).split(area);
+    visible_scopes
+        .into_iter()
+        .zip(areas.iter().copied())
+        .collect()
 }
 
-/// Return the scope card at a terminal coordinate, if any.
+/// Return the visible scope card at a terminal coordinate, if any.
 #[must_use]
-pub(crate) fn scope_at(area: Rect, column: u16, row: u16) -> Option<Scope> {
-    card_areas(area)
+pub(crate) fn scope_at(
+    area: Rect,
+    visibility: SummaryCardVisibility,
+    column: u16,
+    row: u16,
+) -> Option<Scope> {
+    visible_card_areas(area, visibility)
         .into_iter()
         .find_map(|(scope, card_area)| contains(card_area, column, row).then_some(scope))
 }
@@ -75,7 +72,6 @@ fn render_card(
     } else {
         theme::SURFACE
     };
-    // Card block with border
     let border_style = if active {
         theme::border().fg(theme::ACCENT)
     } else if hovered {
@@ -96,30 +92,24 @@ fn render_card(
         return;
     }
 
-    // Layout within card: label, cost, tokens, sparkline
     let constraints = if inner.height >= 5 {
         vec![
-            Constraint::Length(1), // label
-            Constraint::Length(1), // cost
-            Constraint::Length(1), // tokens
-            Constraint::Min(1),    // sparkline
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
         ]
     } else if inner.height >= 3 {
         vec![
-            Constraint::Length(1), // label
-            Constraint::Length(1), // cost
-            Constraint::Length(1), // tokens
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
         ]
     } else {
-        vec![
-            Constraint::Length(1), // label
-            Constraint::Length(1), // cost
-        ]
+        vec![Constraint::Length(1), Constraint::Length(1)]
     };
-
     let card_areas = Layout::vertical(constraints).split(inner);
 
-    // Label with trend indicator
     let label_style = if active {
         theme::card_label()
             .bg(surface)
@@ -141,14 +131,12 @@ fn render_card(
     ]);
     frame.render_widget(label, card_areas[0]);
 
-    // Cost
     let cost_line = Line::from(Span::styled(
         card.cost_str(),
         theme::card_value().bg(surface),
     ));
     frame.render_widget(cost_line, card_areas[1]);
 
-    // Tokens (if space)
     if card_areas.len() >= 3 {
         let tokens_line = Line::from(Span::styled(
             card.tokens_str(),
@@ -157,17 +145,13 @@ fn render_card(
         frame.render_widget(tokens_line, card_areas[2]);
     }
 
-    // Sparkline (if space and enabled)
     if card_areas.len() >= 4 && !card.sparkline.is_empty() && show_sparklines {
-        // Ratatui's Sparkline renders the FIRST N data points (N = widget width).
-        // We want to show the most recent data, so slice to the tail.
         let width = card_areas[3].width as usize;
         let data = if card.sparkline.len() > width {
             &card.sparkline[card.sparkline.len() - width..]
         } else {
             &card.sparkline
         };
-
         let sparkline = Sparkline::default().data(data).style(
             ratatui::style::Style::default()
                 .fg(if active {
@@ -185,13 +169,13 @@ fn render_card(
 mod tests {
     use ratatui::layout::Rect;
 
-    use super::{card_areas, scope_at};
-    use crate::tui::app::Scope;
+    use super::{scope_at, visible_card_areas};
+    use crate::tui::app::{Scope, SummaryCardVisibility};
 
     #[test]
     fn splits_card_area_into_scope_order() {
         let area = Rect::new(4, 2, 80, 7);
-        let cards = card_areas(area);
+        let cards = visible_card_areas(area, SummaryCardVisibility::default());
 
         assert_eq!(cards[0], (Scope::Today, Rect::new(4, 2, 20, 7)));
         assert_eq!(cards[1], (Scope::Week, Rect::new(24, 2, 20, 7)));
@@ -202,12 +186,24 @@ mod tests {
     #[test]
     fn hit_tests_card_boundaries() {
         let area = Rect::new(0, 1, 80, 7);
+        let visibility = SummaryCardVisibility::default();
 
-        assert_eq!(scope_at(area, 0, 1), Some(Scope::Today));
-        assert_eq!(scope_at(area, 19, 7), Some(Scope::Today));
-        assert_eq!(scope_at(area, 20, 1), Some(Scope::Week));
-        assert_eq!(scope_at(area, 79, 7), Some(Scope::AllTime));
-        assert_eq!(scope_at(area, 80, 7), None);
-        assert_eq!(scope_at(area, 10, 8), None);
+        assert_eq!(scope_at(area, visibility, 0, 1), Some(Scope::Today));
+        assert_eq!(scope_at(area, visibility, 19, 7), Some(Scope::Today));
+        assert_eq!(scope_at(area, visibility, 20, 1), Some(Scope::Week));
+        assert_eq!(scope_at(area, visibility, 79, 7), Some(Scope::AllTime));
+        assert_eq!(scope_at(area, visibility, 80, 7), None);
+        assert_eq!(scope_at(area, visibility, 10, 8), None);
+    }
+
+    #[test]
+    fn hidden_cards_reflow_hit_targets() {
+        let mut visibility = SummaryCardVisibility::default();
+        visibility.toggle(Scope::Today);
+
+        assert_eq!(
+            scope_at(Rect::new(0, 1, 60, 7), visibility, 1, 1),
+            Some(Scope::Week)
+        );
     }
 }

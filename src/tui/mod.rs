@@ -124,6 +124,5 @@ async fn run_async(
         }
     }
 
-    terminal::restore()?;
-    Ok(())
+    Ok(terminal.finish()?)
 }

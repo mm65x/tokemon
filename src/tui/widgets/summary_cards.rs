@@ -22,31 +22,12 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     }
 }
 
-/// Return all four scope card rectangles in their default rendered order.
-#[must_use]
-pub(crate) fn card_areas(area: Rect) -> [(Scope, Rect); 4] {
-    let [today, week, month, all_time] = Layout::horizontal([
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-    ])
-    .areas(area);
-
-    [
-        (Scope::Today, today),
-        (Scope::Week, week),
-        (Scope::Month, month),
-        (Scope::AllTime, all_time),
-    ]
-}
-
 fn visible_card_areas(area: Rect, visibility: SummaryCardVisibility) -> Vec<(Scope, Rect)> {
     let visible_scopes: Vec<Scope> = Scope::ALL
         .into_iter()
         .filter(|scope| visibility.is_visible(*scope))
         .collect();
-    let count = visible_scopes.len();
+    let count = visibility.visible_count();
     if count == 0 {
         return Vec::new();
     }
@@ -188,13 +169,13 @@ fn render_card(
 mod tests {
     use ratatui::layout::Rect;
 
-    use super::{card_areas, scope_at};
+    use super::{scope_at, visible_card_areas};
     use crate::tui::app::{Scope, SummaryCardVisibility};
 
     #[test]
     fn splits_card_area_into_scope_order() {
         let area = Rect::new(4, 2, 80, 7);
-        let cards = card_areas(area);
+        let cards = visible_card_areas(area, SummaryCardVisibility::default());
 
         assert_eq!(cards[0], (Scope::Today, Rect::new(4, 2, 20, 7)));
         assert_eq!(cards[1], (Scope::Week, Rect::new(24, 2, 20, 7)));

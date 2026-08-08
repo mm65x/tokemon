@@ -155,7 +155,7 @@ mod tests {
     use ratatui::layout::Rect;
 
     use super::{dashboard_layout, mouse_action, summary_card_height, MouseAction};
-    use crate::tui::app::Scope;
+    use crate::tui::app::{Scope, SummaryCardVisibility};
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {

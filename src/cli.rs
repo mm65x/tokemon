@@ -120,6 +120,8 @@ pub enum Commands {
     Discover,
     /// Generate default config file at ~/.config/tokemon/config.toml
     Init,
+    /// Open the interactive configuration editor
+    Config,
     /// Show per-session cost breakdown
     Sessions {
         /// Show top N sessions by cost

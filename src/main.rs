@@ -50,6 +50,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Commands::Init => cmd_init(),
+        Commands::Config => tui::run_config(&config, cli.offline || config.offline),
         Commands::Statusline => cmd_statusline(&cli, &config),
         Commands::Budget => cmd_budget(&cli, &config),
         Commands::Sessions { top } => cmd_sessions(&cli, &config, *top),

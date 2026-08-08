@@ -112,6 +112,25 @@ fn test_cline_parse_fixture() {
 }
 
 #[test]
+fn test_continue_parse_fixture() {
+    let provider = tokemon::source::continue_dev::ContinueSource::new();
+    let path = Path::new("tests/fixtures/continue_tokens.jsonl");
+    let entries = provider.parse_file(path).unwrap();
+
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].provider, "continue");
+    assert_eq!(
+        entries[0].model.as_deref(),
+        Some("anthropic/claude-sonnet-4")
+    );
+    assert_eq!(entries[0].input_tokens, 1_234);
+    assert_eq!(entries[0].output_tokens, 321);
+    assert_eq!(entries[1].model.as_deref(), Some("vertexai.gemini-2.5-pro"));
+    assert_eq!(entries[1].input_tokens, 800);
+    assert_eq!(entries[1].output_tokens, 200);
+}
+
+#[test]
 fn test_daily_aggregation() {
     let provider = tokemon::source::claude_code::ClaudeCodeSource::new();
     let path = Path::new("tests/fixtures/claude_sample.jsonl");

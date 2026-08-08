@@ -42,6 +42,7 @@ pub fn render(frame: &mut Frame) {
         ("/", "Filter by model/provider"),
         ("j / ↓", "Scroll table down"),
         ("k / ↑", "Scroll table up"),
+        ("Mouse", "Click scope cards / scroll table"),
         ("S", "Open settings editor"),
         ("?", "Toggle this help"),
         ("q / Esc", "Quit (or clear filter)"),

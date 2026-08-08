@@ -11,6 +11,8 @@ mod widgets;
 
 use std::time::Duration;
 
+use ratatui::layout::Rect;
+
 use crate::config::Config;
 use app::{App, Scope};
 use event::{Event, EventHandler};
@@ -63,6 +65,7 @@ async fn run_async(
     offline: bool,
 ) -> anyhow::Result<()> {
     let mut terminal = terminal::init()?;
+    let mut terminal_area = Rect::from(terminal.size()?);
     let mut app = App::new(config, scope, offline);
 
     let mut events = EventHandler::new(
@@ -87,7 +90,10 @@ async fn run_async(
             match &event {
                 Event::Render => {} // render ticks don't mark state dirty
                 other => {
-                    app.handle_event(other);
+                    if let Event::Resize(width, height) = other {
+                        terminal_area = Rect::new(0, 0, *width, *height);
+                    }
+                    app.handle_event(other, terminal_area);
                 }
             }
 

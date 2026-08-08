@@ -12,6 +12,7 @@ use crate::types::Record;
 const PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const CACHE_TTL_SECS: u64 = 3600; // 1 hour
+const PRICING_OVERRIDE_FILENAME: &str = "pricing_override.json";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelPricing {
@@ -29,6 +30,15 @@ pub struct PricingEngine {
 
 impl PricingEngine {
     pub fn load(offline: bool) -> Result<Self> {
+        let mut engine = Self::load_base(offline)?;
+        let override_path = Self::override_path();
+        if let Err(e) = engine.apply_overrides_from_path(&override_path) {
+            eprintln!("[tokemon] Warning: {e}; using base prices");
+        }
+        Ok(engine)
+    }
+
+    fn load_base(offline: bool) -> Result<Self> {
         let cache_path = Self::cache_path();
 
         // Check if cache is fresh
@@ -41,9 +51,12 @@ impl PricingEngine {
                 if let Ok(engine) = Self::parse_pricing(&data) {
                     return Ok(engine);
                 }
-                eprintln!("[tokemon] Warning: cached pricing data corrupt; costs will be $0.00");
+                eprintln!("[tokemon] Warning: cached pricing data corrupt; no base prices loaded");
             }
-            eprintln!("[tokemon] Warning: no cached pricing data and --offline specified; costs will be $0.00");
+            eprintln!(
+                "[tokemon] Warning: no cached pricing data and --offline specified; \
+                 no base prices loaded"
+            );
             return Ok(Self {
                 models: HashMap::new(),
             });
@@ -71,7 +84,10 @@ impl PricingEngine {
                                 return Ok(engine);
                             }
                         }
-                        eprintln!("[tokemon] Warning: failed to parse remote pricing: {e}; costs will be $0.00");
+                        eprintln!(
+                            "[tokemon] Warning: failed to parse remote pricing: {e}; \
+                             no base prices loaded"
+                        );
                         Ok(Self {
                             models: HashMap::new(),
                         })
@@ -88,17 +104,12 @@ impl PricingEngine {
                         return Ok(engine);
                     }
                 }
-                eprintln!("[tokemon] Warning: failed to fetch pricing: {e}; costs will be $0.00");
+                eprintln!("[tokemon] Warning: failed to fetch pricing: {e}; no base prices loaded");
                 Ok(Self {
                     models: HashMap::new(),
                 })
             }
         }
-    }
-
-    /// Returns `true` if the engine has any pricing data loaded.
-    pub fn is_empty(&self) -> bool {
-        self.models.is_empty()
     }
 
     /// Apply costs to all entries in-place, caching pricing lookups per model.
@@ -147,68 +158,91 @@ impl PricingEngine {
         }
     }
 
-    /// Three-level model matching
+    /// Resolve model pricing, preferring an explicit Vertex route.
     fn find_pricing(&self, model: &str) -> Option<&ModelPricing> {
-        // Strip source-level provider prefix (e.g., "vertexai." from Vertex AI detection)
-        // so that the model name is clean for lookup against litellm pricing data.
-        let model = model.strip_prefix("vertexai.").unwrap_or(model);
+        let (route, plain_model) = split_pricing_route(model);
+        let normalized = normalize_model_name(plain_model);
+        let mut candidates = Vec::with_capacity(10);
 
-        // 1. Exact match
-        if let Some(p) = self.models.get(model) {
-            return Some(p);
+        if let Some(provider) = route {
+            push_model_candidates(&mut candidates, Some(provider), plain_model, &normalized);
+        }
+        push_model_candidates(&mut candidates, None, plain_model, &normalized);
+
+        for provider in ordered_provider_prefixes(route, &normalized) {
+            push_model_candidates(&mut candidates, Some(provider), plain_model, &normalized);
         }
 
-        // 2. Normalized match (strip date suffix, lowercase)
-        let normalized = normalize_model_name(model);
-        if let Some(p) = self.models.get(&normalized) {
-            return Some(p);
-        }
-
-        // 3. Try with common provider prefixes
-        let prefixed_variants = [
-            format!("anthropic/{model}"),
-            format!("anthropic/{normalized}"),
-            format!("openai/{model}"),
-            format!("openai/{normalized}"),
-            format!("google/{model}"),
-            format!("google/{normalized}"),
-            format!("vertex_ai/{model}"),
-            format!("vertex_ai/{normalized}"),
-        ];
-        for variant in &prefixed_variants {
-            if let Some(p) = self.models.get(variant.as_str()) {
-                return Some(p);
+        for candidate in candidates {
+            if let Some(pricing) = self.models.get(&candidate) {
+                return Some(pricing);
             }
         }
 
-        // 4. Prefix match - longest match wins, requires word boundary
-        let mut best_match: Option<&ModelPricing> = None;
-        let mut best_len: usize = 0;
-
-        for (key, pricing) in &self.models {
-            let plain_key = key.split('/').next_back().unwrap_or(key);
-            let norm_key = normalize_model_name(plain_key);
-
-            // Only match if our model starts with the pricing key
-            // AND the match ends at a word boundary (delimiter or end of string)
-            if normalized.starts_with(&norm_key) && norm_key.len() > best_len {
-                let at_boundary = normalized.len() == norm_key.len()
-                    || matches!(
-                        normalized.as_bytes().get(norm_key.len()),
-                        Some(b'-' | b'_' | b'.')
-                    );
-                if at_boundary {
-                    best_match = Some(pricing);
-                    best_len = norm_key.len();
-                }
-            }
-        }
-
-        best_match
+        // Fall back to a deterministic longest-prefix match. Provider rank
+        // breaks ties so an explicit route cannot select another provider's
+        // otherwise-equivalent entry.
+        let mut matches: Vec<(&str, &ModelPricing, usize, usize)> = self
+            .models
+            .iter()
+            .filter_map(|(key, pricing)| {
+                let (key_route, plain_key) = split_pricing_route(key);
+                let normalized_key = normalize_model_name(plain_key);
+                model_prefix_matches(&normalized, &normalized_key).then_some((
+                    key.as_str(),
+                    pricing,
+                    normalized_key.len(),
+                    provider_rank(route, &normalized, key_route),
+                ))
+            })
+            .collect();
+        matches.sort_unstable_by(|a, b| {
+            b.2.cmp(&a.2)
+                .then_with(|| a.3.cmp(&b.3))
+                .then_with(|| a.0.cmp(b.0))
+        });
+        matches.first().map(|(_, pricing, _, _)| *pricing)
     }
 
     fn cache_path() -> PathBuf {
         paths::cache_dir().join("pricing.json")
+    }
+
+    fn override_path() -> PathBuf {
+        paths::config_dir().join(PRICING_OVERRIDE_FILENAME)
+    }
+
+    fn apply_overrides_from_path(&mut self, path: &Path) -> Result<()> {
+        let data = match fs::read_to_string(path) {
+            Ok(data) => data,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => {
+                return Err(TokemonError::Pricing(format!(
+                    "failed to read pricing overrides from {}: {e}",
+                    path.display()
+                )));
+            }
+        };
+
+        let overrides: HashMap<String, ModelPricing> =
+            serde_json::from_str(&data).map_err(|e| {
+                TokemonError::Pricing(format!(
+                    "failed to parse pricing overrides from {}: {e}",
+                    path.display()
+                ))
+            })?;
+        self.merge_overrides(overrides);
+        Ok(())
+    }
+
+    fn merge_overrides(&mut self, overrides: HashMap<String, ModelPricing>) {
+        for (model, override_pricing) in overrides {
+            if let Some(base_pricing) = self.models.get_mut(&model) {
+                base_pricing.merge(&override_pricing);
+            } else {
+                self.models.insert(model, override_pricing);
+            }
+        }
     }
 
     fn read_cache(path: &Path) -> Option<String> {
@@ -249,15 +283,116 @@ impl PricingEngine {
     }
 }
 
+impl ModelPricing {
+    fn merge(&mut self, overrides: &Self) {
+        if overrides.input_cost_per_token.is_some() {
+            self.input_cost_per_token = overrides.input_cost_per_token;
+        }
+        if overrides.output_cost_per_token.is_some() {
+            self.output_cost_per_token = overrides.output_cost_per_token;
+        }
+        if overrides.cache_read_cost.is_some() {
+            self.cache_read_cost = overrides.cache_read_cost;
+        }
+        if overrides.cache_creation_cost.is_some() {
+            self.cache_creation_cost = overrides.cache_creation_cost;
+        }
+    }
+}
+
 fn normalize_model_name(model: &str) -> String {
-    let s = model.to_lowercase();
+    let s = strip_deployment_suffix(model).to_lowercase();
     let stripped = crate::display::strip_date_suffix(&s);
     stripped.replace('.', "-")
+}
+
+const PRICING_PROVIDERS: [&str; 4] = ["anthropic", "openai", "google", "vertex_ai"];
+
+fn split_pricing_route(model: &str) -> (Option<&str>, &str) {
+    let route =
+        (model.starts_with("vertexai.") || model.starts_with("vertex_ai/")).then_some("vertex_ai");
+    (route, crate::display::strip_routing_prefix(model))
+}
+
+fn strip_deployment_suffix(model: &str) -> &str {
+    model.split('@').next().unwrap_or(model)
+}
+
+fn push_model_candidates(
+    candidates: &mut Vec<String>,
+    provider: Option<&str>,
+    model: &str,
+    normalized: &str,
+) {
+    for variant in [model, normalized] {
+        let candidate = provider.map_or_else(
+            || variant.to_string(),
+            |provider| format!("{provider}/{variant}"),
+        );
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+}
+
+fn ordered_provider_prefixes(route: Option<&str>, normalized_model: &str) -> Vec<&'static str> {
+    let inferred = infer_pricing_provider(normalized_model);
+    let mut providers = Vec::with_capacity(PRICING_PROVIDERS.len());
+
+    if let Some(provider) = inferred {
+        providers.push(provider);
+    }
+    for provider in PRICING_PROVIDERS {
+        if Some(provider) != route && !providers.contains(&provider) {
+            providers.push(provider);
+        }
+    }
+
+    providers
+}
+
+fn infer_pricing_provider(model: &str) -> Option<&'static str> {
+    if model.starts_with("claude-") {
+        Some("anthropic")
+    } else if model.starts_with("gpt-")
+        || model.starts_with("o1-")
+        || model.starts_with("o3-")
+        || model.starts_with("o4-")
+    {
+        Some("openai")
+    } else if model.starts_with("gemini-") || model.starts_with("gemma-") {
+        Some("google")
+    } else {
+        None
+    }
+}
+
+fn model_prefix_matches(model: &str, prefix: &str) -> bool {
+    model.starts_with(prefix)
+        && (model.len() == prefix.len()
+            || matches!(model.as_bytes().get(prefix.len()), Some(b'-' | b'_' | b'.')))
+}
+
+fn provider_rank(route: Option<&str>, model: &str, candidate_route: Option<&str>) -> usize {
+    if let Some(expected) = route {
+        return match candidate_route {
+            Some(actual) if expected == actual => 0,
+            None => 1,
+            Some(_) => 2,
+        };
+    }
+
+    match candidate_route {
+        Some(actual) if Some(actual) == infer_pricing_provider(model) => 0,
+        None => 1,
+        Some(_) => 2,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     const DUMMY_JSON: &str = r#"{
         "model-a": {
@@ -276,10 +411,38 @@ mod tests {
         }
     }"#;
 
+    fn temporary_override_path(test_name: &str) -> PathBuf {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "tokemon-pricing-override-{test_name}-{}-{id}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir.join(PRICING_OVERRIDE_FILENAME)
+    }
+
+    fn remove_temporary_override(path: &Path) {
+        if let Some(parent) = path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
+    }
+
+    const ROUTED_PRICING_JSON: &str = r#"{
+        "claude-opus-5": {
+            "input_cost_per_token": 0.000005,
+            "output_cost_per_token": 0.000025
+        },
+        "vertex_ai/claude-opus-5": {
+            "input_cost_per_token": 0.000007,
+            "output_cost_per_token": 0.000035
+        }
+    }"#;
+
     #[test]
     fn test_parse_pricing_valid_json() {
         let engine = PricingEngine::parse_pricing(DUMMY_JSON).expect("Failed to parse dummy JSON");
-        assert!(!engine.is_empty());
+        assert!(!engine.models.is_empty());
         assert_eq!(engine.models.len(), 3);
 
         let model_a = engine.models.get("model-a").expect("model-a missing");
@@ -351,6 +514,30 @@ mod tests {
     }
 
     #[test]
+    fn test_claude_wrapper_variants_resolve_equivalently() {
+        let engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+        let expected = engine
+            .find_pricing("claude-3-5-sonnet-20241022")
+            .expect("plain model should resolve");
+
+        for model in [
+            "anthropic/claude-3-5-sonnet-20241022",
+            "vertexai.claude-3-5-sonnet-20241022",
+            "bedrock/anthropic.claude-3-5-sonnet-20241022",
+            "azure/anthropic.claude-3-5-sonnet-20241022",
+            "openai/claude-3-5-sonnet-20241022",
+        ] {
+            let resolved = engine
+                .find_pricing(model)
+                .unwrap_or_else(|| panic!("{model} should resolve"));
+            assert!(
+                std::ptr::eq(resolved, expected),
+                "{model} should resolve to the same pricing entry"
+            );
+        }
+    }
+
+    #[test]
     fn test_find_pricing_longest_prefix() {
         let engine = PricingEngine::parse_pricing(
             r#"{
@@ -371,6 +558,172 @@ mod tests {
             .find_pricing("gpt-4-32k-0613")
             .expect("should prefix match gpt-4-32k");
         assert_eq!(p2.input_cost_per_token, Some(0.06));
+    }
+
+    #[test]
+    fn test_vertex_route_prefers_provider_specific_pricing() {
+        let engine = PricingEngine::parse_pricing(ROUTED_PRICING_JSON).unwrap();
+
+        let direct = engine
+            .find_pricing("claude-opus-5")
+            .expect("generic model should resolve");
+        assert_eq!(direct.input_cost_per_token, Some(0.000005));
+
+        let routed = engine
+            .find_pricing("vertexai.claude-opus-5")
+            .expect("routed model should resolve");
+        assert_eq!(routed.input_cost_per_token, Some(0.000007));
+    }
+
+    #[test]
+    fn test_vertex_routed_record_gets_provider_specific_cost() {
+        use chrono::Utc;
+        use std::borrow::Cow;
+
+        let engine = PricingEngine::parse_pricing(ROUTED_PRICING_JSON).unwrap();
+        let mut records = [Record {
+            timestamp: Utc::now(),
+            provider: Cow::Borrowed("test"),
+            model: Some("vertexai.claude-opus-5".to_string()),
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_read_tokens: 0,
+            cache_creation_tokens: 0,
+            thinking_tokens: 0,
+            cost_usd: Some(0.0),
+            message_id: None,
+            request_id: None,
+            session_id: None,
+        }];
+
+        engine.apply_costs(&mut records);
+
+        assert_eq!(records[0].cost_usd, Some(42.0));
+    }
+
+    #[test]
+    fn test_vertex_route_normalizes_deployment_alias() {
+        let engine = PricingEngine::parse_pricing(ROUTED_PRICING_JSON).unwrap();
+
+        let routed = engine
+            .find_pricing("vertexai.claude-opus-5@default")
+            .expect("deployment alias should resolve");
+        assert_eq!(routed.output_cost_per_token, Some(0.000035));
+    }
+
+    #[test]
+    fn test_vertex_route_deterministically_prefers_provider_fallback() {
+        let engine = PricingEngine::parse_pricing(
+            r#"{
+                "anthropic/claude-opus-5-20260724": {
+                    "input_cost_per_token": 0.000005
+                },
+                "vertex_ai/claude-opus-5@20260724": {
+                    "input_cost_per_token": 0.000007
+                }
+            }"#,
+        )
+        .unwrap();
+
+        for _ in 0..10 {
+            let routed = engine
+                .find_pricing("vertexai.claude-opus-5@default")
+                .expect("provider fallback should resolve");
+            assert_eq!(routed.input_cost_per_token, Some(0.000007));
+        }
+    }
+
+    #[test]
+    fn test_missing_pricing_override_is_no_op() {
+        let path = temporary_override_path("missing");
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        engine.apply_overrides_from_path(&path).unwrap();
+
+        assert_eq!(engine.models.len(), 3);
+        assert_eq!(engine.models["model-a"].input_cost_per_token, Some(0.001));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_pricing_override_merges_existing_model_fields() {
+        let path = temporary_override_path("existing");
+        fs::write(
+            &path,
+            r#"{
+                "model-a": {
+                    "input_cost_per_token": 0.009,
+                    "cache_read_cost": 0.0009
+                }
+            }"#,
+        )
+        .unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        engine.apply_overrides_from_path(&path).unwrap();
+
+        let pricing = &engine.models["model-a"];
+        assert_eq!(pricing.input_cost_per_token, Some(0.009));
+        assert_eq!(pricing.output_cost_per_token, Some(0.002));
+        assert_eq!(pricing.cache_read_cost, Some(0.0009));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_pricing_override_adds_custom_model() {
+        let path = temporary_override_path("custom");
+        fs::write(
+            &path,
+            r#"{
+                "custom-model": {
+                    "input_cost_per_token": 0.004,
+                    "output_cost_per_token": 0.008,
+                    "cache_creation_input_token_cost": 0.005
+                }
+            }"#,
+        )
+        .unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        engine.apply_overrides_from_path(&path).unwrap();
+
+        let pricing = engine
+            .find_pricing("custom-model")
+            .expect("custom model should be added");
+        assert_eq!(pricing.input_cost_per_token, Some(0.004));
+        assert_eq!(pricing.output_cost_per_token, Some(0.008));
+        assert_eq!(pricing.cache_creation_cost, Some(0.005));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_malformed_pricing_override_keeps_base_prices() {
+        let path = temporary_override_path("malformed");
+        fs::write(&path, r#"{"model-a": {"input_cost_per_token": "bad"}}"#).unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        let error = engine.apply_overrides_from_path(&path).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to parse pricing overrides"));
+        assert_eq!(engine.models["model-a"].input_cost_per_token, Some(0.001));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_unreadable_pricing_override_keeps_base_prices() {
+        let path = temporary_override_path("unreadable");
+        fs::create_dir(&path).unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        let error = engine.apply_overrides_from_path(&path).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to read pricing overrides"));
+        assert_eq!(engine.models["model-a"].input_cost_per_token, Some(0.001));
+        remove_temporary_override(&path);
     }
 
     #[test]

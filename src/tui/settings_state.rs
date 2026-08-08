@@ -23,11 +23,14 @@ pub(crate) enum SettingField {
     ColClient,
     ColInput,
     ColOutput,
+    ColRequests,
+    ColTotalTokens,
+    ColCost,
 }
 
 impl SettingField {
     /// Total number of settings fields.
-    pub const COUNT: usize = 16;
+    pub const COUNT: usize = 19;
 
     /// All fields in display order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -47,6 +50,9 @@ impl SettingField {
         Self::ColClient,
         Self::ColInput,
         Self::ColOutput,
+        Self::ColRequests,
+        Self::ColTotalTokens,
+        Self::ColCost,
     ];
 
     /// Display label for this field.
@@ -69,6 +75,9 @@ impl SettingField {
             Self::ColClient => "Client",
             Self::ColInput => "Input Tokens",
             Self::ColOutput => "Output Tokens",
+            Self::ColRequests => "Requests",
+            Self::ColTotalTokens => "Total Tokens",
+            Self::ColCost => "Cost",
         }
     }
 
@@ -95,6 +104,9 @@ impl SettingField {
                 | Self::ColClient
                 | Self::ColInput
                 | Self::ColOutput
+                | Self::ColRequests
+                | Self::ColTotalTokens
+                | Self::ColCost
         )
     }
 
@@ -143,6 +155,9 @@ impl SettingField {
             Self::ColClient => bool_display(config.columns.client),
             Self::ColInput => bool_display(config.columns.input),
             Self::ColOutput => bool_display(config.columns.output),
+            Self::ColRequests => bool_display(config.columns.requests),
+            Self::ColTotalTokens => bool_display(config.columns.total_tokens),
+            Self::ColCost => bool_display(config.columns.cost),
         }
     }
 
@@ -155,6 +170,9 @@ impl SettingField {
             Self::ColClient => config.columns.client = !config.columns.client,
             Self::ColInput => config.columns.input = !config.columns.input,
             Self::ColOutput => config.columns.output = !config.columns.output,
+            Self::ColRequests => config.columns.requests = !config.columns.requests,
+            Self::ColTotalTokens => config.columns.total_tokens = !config.columns.total_tokens,
+            Self::ColCost => config.columns.cost = !config.columns.cost,
             _ => {}
         }
     }
@@ -305,5 +323,36 @@ impl SettingsState {
                 self.flash_message = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metric_visibility_is_independent_from_cost_calculation() {
+        let mut config = Config::default();
+
+        SettingField::ColCost.toggle_bool(&mut config);
+        assert!(!config.columns.cost);
+        assert!(!config.no_cost);
+
+        SettingField::NoCost.toggle_bool(&mut config);
+        assert!(config.no_cost);
+        assert!(!config.columns.cost);
+    }
+
+    #[test]
+    fn metric_fields_toggle_their_persisted_columns() {
+        let mut config = Config::default();
+
+        SettingField::ColRequests.toggle_bool(&mut config);
+        SettingField::ColTotalTokens.toggle_bool(&mut config);
+        SettingField::ColCost.toggle_bool(&mut config);
+
+        assert!(!config.columns.requests);
+        assert!(!config.columns.total_tokens);
+        assert!(!config.columns.cost);
     }
 }

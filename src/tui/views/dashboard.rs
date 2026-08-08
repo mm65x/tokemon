@@ -132,7 +132,9 @@ pub(crate) fn hover_target(area: Rect, app: &App, event: MouseEvent) -> Option<H
 
     layout
         .summary_cards
-        .and_then(|cards| summary_cards::scope_at(cards, app.card_visibility, event.column, event.row))
+        .and_then(|cards| {
+            summary_cards::scope_at(cards, app.card_visibility, event.column, event.row)
+        })
         .map(HoverTarget::Card)
         .or_else(|| {
             usage_table::row_at(layout.usage_table, app, event.column, event.row)
@@ -216,7 +218,11 @@ mod tests {
             hidden.toggle(scope);
         }
         assert_eq!(
-            mouse_action(area, hidden, mouse(MouseEventKind::Down(MouseButton::Left), 5, 2)),
+            mouse_action(
+                area,
+                hidden,
+                mouse(MouseEventKind::Down(MouseButton::Left), 5, 2)
+            ),
             None
         );
     }

@@ -450,12 +450,13 @@ impl App {
         }
 
         let hover_changed = self.set_hover(dashboard::hover_target(terminal_area, self, mouse));
-        let action_changed = match dashboard::mouse_action(terminal_area, self.card_visibility, mouse) {
-            Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
-            Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
-            Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
-            None => false,
-        };
+        let action_changed =
+            match dashboard::mouse_action(terminal_area, self.card_visibility, mouse) {
+                Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
+                Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
+                Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
+                None => false,
+            };
         hover_changed || action_changed
     }
 

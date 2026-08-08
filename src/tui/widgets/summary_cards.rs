@@ -220,6 +220,9 @@ mod tests {
         let mut visibility = SummaryCardVisibility::default();
         visibility.toggle(Scope::Today);
 
-        assert_eq!(scope_at(Rect::new(0, 1, 60, 7), visibility, 1, 1), Some(Scope::Week));
+        assert_eq!(
+            scope_at(Rect::new(0, 1, 60, 7), visibility, 1, 1),
+            Some(Scope::Week)
+        );
     }
 }

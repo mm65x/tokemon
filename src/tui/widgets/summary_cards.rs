@@ -15,23 +15,8 @@ use crate::tui::theme;
 /// - Token count (secondary)
 /// - Sparkline (trend)
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
-    // Split into 4 equal columns
-    let [c1, c2, c3, c4] = Layout::horizontal([
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-        Constraint::Ratio(1, 4),
-    ])
-    .areas(area);
-
-    let scoped = [
-        (Scope::Today, c1),
-        (Scope::Week, c2),
-        (Scope::Month, c3),
-        (Scope::AllTime, c4),
-    ];
     let show_sparklines = app.config.show_sparklines;
-    for (i, &(scope, card_area)) in scoped.iter().enumerate() {
+    for (i, (scope, card_area)) in card_areas(area).into_iter().enumerate() {
         render_card(
             frame,
             card_area,
@@ -40,6 +25,40 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             show_sparklines,
         );
     }
+}
+
+/// Return the scope card rectangles in their rendered order.
+#[must_use]
+pub(crate) fn card_areas(area: Rect) -> [(Scope, Rect); 4] {
+    let [today, week, month, all_time] = Layout::horizontal([
+        Constraint::Ratio(1, 4),
+        Constraint::Ratio(1, 4),
+        Constraint::Ratio(1, 4),
+        Constraint::Ratio(1, 4),
+    ])
+    .areas(area);
+
+    [
+        (Scope::Today, today),
+        (Scope::Week, week),
+        (Scope::Month, month),
+        (Scope::AllTime, all_time),
+    ]
+}
+
+/// Return the scope card at a terminal coordinate, if any.
+#[must_use]
+pub(crate) fn scope_at(area: Rect, column: u16, row: u16) -> Option<Scope> {
+    card_areas(area)
+        .into_iter()
+        .find_map(|(scope, card_area)| contains(card_area, column, row).then_some(scope))
+}
+
+fn contains(area: Rect, column: u16, row: u16) -> bool {
+    column >= area.x
+        && column < area.x.saturating_add(area.width)
+        && row >= area.y
+        && row < area.y.saturating_add(area.height)
 }
 
 fn render_card(
@@ -144,5 +163,36 @@ fn render_card(
                 .bg(theme::SURFACE),
         );
         frame.render_widget(sparkline, card_areas[3]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::layout::Rect;
+
+    use super::{card_areas, scope_at};
+    use crate::tui::app::Scope;
+
+    #[test]
+    fn splits_card_area_into_scope_order() {
+        let area = Rect::new(4, 2, 80, 7);
+        let cards = card_areas(area);
+
+        assert_eq!(cards[0], (Scope::Today, Rect::new(4, 2, 20, 7)));
+        assert_eq!(cards[1], (Scope::Week, Rect::new(24, 2, 20, 7)));
+        assert_eq!(cards[2], (Scope::Month, Rect::new(44, 2, 20, 7)));
+        assert_eq!(cards[3], (Scope::AllTime, Rect::new(64, 2, 20, 7)));
+    }
+
+    #[test]
+    fn hit_tests_card_boundaries() {
+        let area = Rect::new(0, 1, 80, 7);
+
+        assert_eq!(scope_at(area, 0, 1), Some(Scope::Today));
+        assert_eq!(scope_at(area, 19, 7), Some(Scope::Today));
+        assert_eq!(scope_at(area, 20, 1), Some(Scope::Week));
+        assert_eq!(scope_at(area, 79, 7), Some(Scope::AllTime));
+        assert_eq!(scope_at(area, 80, 7), None);
+        assert_eq!(scope_at(area, 10, 8), None);
     }
 }

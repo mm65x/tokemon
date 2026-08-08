@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 pub enum Event {
     /// A key was pressed.
     Key(crossterm::event::KeyEvent),
-    /// A mouse button was pressed or the wheel was scrolled.
+    /// A mouse button was pressed, the wheel was scrolled, or the pointer moved.
     Mouse(crossterm::event::MouseEvent),
     /// Terminal was resized (values used by ratatui's `frame.area()` implicitly).
     #[allow(dead_code)]
@@ -124,6 +124,7 @@ fn map_crossterm_event(event: &CrosstermEvent) -> Option<Event> {
                 MouseEventKind::Down(MouseButton::Left)
                     | MouseEventKind::ScrollUp
                     | MouseEventKind::ScrollDown
+                    | MouseEventKind::Moved
             ) =>
         {
             Some(Event::Mouse(*mouse))
@@ -169,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_mouse_motion() {
+    fn routes_mouse_motion() {
         let mouse = MouseEvent {
             kind: MouseEventKind::Moved,
             column: 12,
@@ -177,6 +178,9 @@ mod tests {
             modifiers: KeyModifiers::NONE,
         };
 
-        assert!(map_crossterm_event(&CrosstermEvent::Mouse(mouse)).is_none());
+        assert!(matches!(
+            map_crossterm_event(&CrosstermEvent::Mouse(mouse)),
+            Some(Event::Mouse(event)) if event == mouse
+        ));
     }
 }

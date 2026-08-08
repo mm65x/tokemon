@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Sparkline};
 use ratatui::Frame;
 
-use crate::tui::app::{App, Scope};
+use crate::tui::app::{App, HoverTarget, Scope};
 use crate::tui::theme;
 
 /// Render the four summary cards: Today, This Week, This Month, All Time.
@@ -22,6 +22,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             card_area,
             &app.cards[i],
             scope == app.scope,
+            matches!(app.hovered.as_ref(), Some(HoverTarget::Card(hovered)) if *hovered == scope),
             show_sparklines,
         );
     }
@@ -66,11 +67,19 @@ fn render_card(
     area: Rect,
     card: &crate::tui::app::CardData,
     active: bool,
+    hovered: bool,
     show_sparklines: bool,
 ) {
+    let surface = if hovered {
+        theme::SURFACE_HOVER
+    } else {
+        theme::SURFACE
+    };
     // Card block with border
     let border_style = if active {
         theme::border().fg(theme::ACCENT)
+    } else if hovered {
+        theme::border().fg(theme::ACCENT_DIM)
     } else {
         theme::border()
     };
@@ -78,7 +87,7 @@ fn render_card(
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .style(theme::card());
+        .style(theme::card().bg(surface));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -112,9 +121,11 @@ fn render_card(
 
     // Label with trend indicator
     let label_style = if active {
-        theme::card_label().add_modifier(Modifier::UNDERLINED)
-    } else {
         theme::card_label()
+            .bg(surface)
+            .add_modifier(Modifier::UNDERLINED)
+    } else {
+        theme::card_label().bg(surface)
     };
     let trend_color = match card.trend.cmp(&0) {
         std::cmp::Ordering::Greater => theme::GREEN,
@@ -125,20 +136,24 @@ fn render_card(
         Span::styled(card.label, label_style),
         Span::styled(
             format!(" {}", card.trend_symbol()),
-            ratatui::style::Style::default()
-                .fg(trend_color)
-                .bg(theme::SURFACE),
+            ratatui::style::Style::default().fg(trend_color).bg(surface),
         ),
     ]);
     frame.render_widget(label, card_areas[0]);
 
     // Cost
-    let cost_line = Line::from(Span::styled(card.cost_str(), theme::card_value()));
+    let cost_line = Line::from(Span::styled(
+        card.cost_str(),
+        theme::card_value().bg(surface),
+    ));
     frame.render_widget(cost_line, card_areas[1]);
 
     // Tokens (if space)
     if card_areas.len() >= 3 {
-        let tokens_line = Line::from(Span::styled(card.tokens_str(), theme::card_secondary()));
+        let tokens_line = Line::from(Span::styled(
+            card.tokens_str(),
+            theme::card_secondary().bg(surface),
+        ));
         frame.render_widget(tokens_line, card_areas[2]);
     }
 
@@ -160,7 +175,7 @@ fn render_card(
                 } else {
                     theme::ACCENT_DIM
                 })
-                .bg(theme::SURFACE),
+                .bg(surface),
         );
         frame.render_widget(sparkline, card_areas[3]);
     }

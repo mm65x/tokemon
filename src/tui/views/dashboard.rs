@@ -3,7 +3,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::Block;
 use ratatui::Frame;
 
-use crate::tui::app::App;
+use crate::tui::app::{App, HoverTarget};
 use crate::tui::theme;
 use crate::tui::views::{help, settings};
 use crate::tui::widgets::{header, status_bar, summary_cards, usage_table};
@@ -121,6 +121,21 @@ pub(crate) fn mouse_action(area: Rect, event: MouseEvent) -> Option<MouseAction>
         }
         _ => None,
     }
+}
+
+/// Resolve pointer movement to a rendered interactive region.
+#[must_use]
+pub(crate) fn hover_target(area: Rect, app: &App, event: MouseEvent) -> Option<HoverTarget> {
+    let layout = dashboard_layout(area);
+
+    layout
+        .summary_cards
+        .and_then(|cards| summary_cards::scope_at(cards, event.column, event.row))
+        .map(HoverTarget::Card)
+        .or_else(|| {
+            usage_table::row_at(layout.usage_table, app, event.column, event.row)
+                .map(HoverTarget::TableRow)
+        })
 }
 
 fn contains(area: Rect, column: u16, row: u16) -> bool {

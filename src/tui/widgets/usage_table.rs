@@ -7,7 +7,7 @@ use ratatui::Frame;
 use crate::config::ColumnConfig;
 use crate::display;
 use crate::render::{format_cost, format_tokens_short};
-use crate::tui::app::App;
+use crate::tui::app::{App, HoverTarget};
 use crate::tui::diff::RowKey;
 use crate::tui::theme;
 
@@ -131,6 +131,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                         ),
                     };
 
+                    let hovered = matches!(
+                        app.hovered.as_ref(),
+                        Some(HoverTarget::TableRow(hovered_key)) if hovered_key == &RowKey::from(mu)
+                    );
+                    let sub_style = if hovered {
+                        sub_style.bg(theme::SURFACE_HOVER)
+                    } else {
+                        sub_style
+                    };
                     let sub_cells = cols.build_row(
                         &name_col,
                         &api_col,
@@ -178,6 +187,15 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
             let row_key = RowKey::from(mu);
             let intensity = app.highlight_intensity(&row_key);
 
+            let hovered = matches!(
+                app.hovered.as_ref(),
+                Some(HoverTarget::TableRow(hovered_key)) if hovered_key == &row_key
+            );
+            let row_style = if hovered {
+                theme::text().bg(theme::SURFACE_HOVER)
+            } else {
+                theme::text()
+            };
             let cells = cols.build_row(
                 &name_col,
                 &api_col,
@@ -187,7 +205,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 mu.output_tokens,
                 total,
                 mu.cost_usd,
-                theme::text(),
+                row_style,
                 true,
                 intensity,
             );
@@ -216,6 +234,51 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
 
     // Clamp scroll_offset if it exceeds available rows (borrow after rendering)
     // This is a visual-only clamp; actual state clamping happens in app.rs
+}
+
+/// Return the model row under a terminal coordinate, accounting for the
+/// table header and current scroll offset. Non-model rows are not interactive.
+#[must_use]
+pub(crate) fn row_at(area: Rect, app: &App, column: u16, row: u16) -> Option<RowKey> {
+    let inner = Block::default().borders(Borders::ALL).inner(area);
+    if inner.height < 3
+        || inner.width < 20
+        || (app.detail_models.is_empty() && app.history_summaries.is_empty())
+        || column < inner.x
+        || column >= inner.x.saturating_add(inner.width)
+        || row < inner.y.saturating_add(1)
+        || row >= inner.y.saturating_add(inner.height)
+    {
+        return None;
+    }
+
+    let body_index = body_row_index(inner, app.scroll_offset, row)?;
+    row_keys(app).get(body_index).and_then(Clone::clone)
+}
+
+fn body_row_index(inner: Rect, scroll_offset: u16, row: u16) -> Option<usize> {
+    (row >= inner.y.saturating_add(1) && row < inner.y.saturating_add(inner.height)).then(|| {
+        scroll_offset.saturating_add(row.saturating_sub(inner.y).saturating_sub(1)) as usize
+    })
+}
+
+fn row_keys(app: &App) -> Vec<Option<RowKey>> {
+    let mut rows: Vec<Option<RowKey>> = if app.show_history && !app.history_summaries.is_empty() {
+        app.history_summaries
+            .iter()
+            .flat_map(|summary| {
+                std::iter::once(None)
+                    .chain(summary.models.iter().map(|model| Some(RowKey::from(model))))
+            })
+            .collect()
+    } else {
+        app.detail_models
+            .iter()
+            .map(|model| Some(RowKey::from(model)))
+            .collect()
+    };
+    rows.push(None); // TOTAL row
+    rows
 }
 
 // ── Column management ─────────────────────────────────────────────────────
@@ -499,6 +562,16 @@ fn apply_highlight(normal: Style, intensity: f64) -> Style {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn body_row_index_skips_header_and_applies_scroll() {
+        let inner = Rect::new(2, 4, 40, 8);
+
+        assert_eq!(body_row_index(inner, 3, 4), None);
+        assert_eq!(body_row_index(inner, 3, 5), Some(3));
+        assert_eq!(body_row_index(inner, 3, 11), Some(9));
+        assert_eq!(body_row_index(inner, 3, 12), None);
+    }
 
     #[test]
     fn masks_metric_columns_with_persisted_visibility() {

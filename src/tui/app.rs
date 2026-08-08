@@ -78,6 +78,13 @@ pub struct CardData {
     pub trend: i8,
 }
 
+/// Interactive region currently under the pointer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HoverTarget {
+    Card(Scope),
+    TableRow(RowKey),
+}
+
 impl CardData {
     #[must_use]
     pub fn cost_str(&self) -> String {
@@ -184,6 +191,8 @@ pub struct App {
     /// it was last updated. Used for the green fade animation on
     /// individual table cells.
     pub highlight_map: HashMap<RowKey, Instant>,
+    /// Interactive region currently under the pointer, if any.
+    pub(crate) hovered: Option<HoverTarget>,
     /// Last warning message from the background watcher or data loading,
     /// with the instant it was received. Displayed in the status bar
     /// for a few seconds then cleared.
@@ -278,6 +287,7 @@ impl App {
             applied_filter: String::new(),
             sort_order: SortOrder::CostDesc,
             highlight_map: HashMap::new(),
+            hovered: None,
             last_warning: None,
             show_settings: false,
             settings_state: SettingsState::new(config),
@@ -376,15 +386,25 @@ impl App {
 
     fn handle_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
         if self.show_settings || self.show_help || self.filter_active {
-            return false;
+            return self.set_hover(None);
         }
 
-        match dashboard::mouse_action(terminal_area, mouse) {
+        let hover_changed = self.set_hover(dashboard::hover_target(terminal_area, self, mouse));
+        let action_changed = match dashboard::mouse_action(terminal_area, mouse) {
             Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
             Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
             Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
             None => false,
+        };
+        hover_changed || action_changed
+    }
+
+    fn set_hover(&mut self, target: Option<HoverTarget>) -> bool {
+        if self.hovered == target {
+            return false;
         }
+        self.hovered = target;
+        true
     }
 
     /// Returns the current warning message if it's still fresh (< 5 seconds old).

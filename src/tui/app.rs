@@ -274,6 +274,8 @@ pub struct App {
     pub spike_data: Option<SpikeSeries>,
     /// Whether the settings overlay is shown.
     pub show_settings: bool,
+    /// Whether this session should exit when the settings overlay closes.
+    pub(crate) config_only: bool,
     /// Settings editor state.
     pub settings_state: SettingsState,
     /// Whether the UI state has changed and needs a redraw.
@@ -369,6 +371,7 @@ impl App {
             heatmap_data: Vec::new(),
             spike_data: None,
             show_settings: false,
+            config_only: false,
             settings_state: SettingsState::new(config),
             dirty: true,
             config: config.clone(),
@@ -718,6 +721,17 @@ impl App {
 
     #[allow(clippy::too_many_lines)]
     fn handle_settings_key(&mut self, key: KeyEvent) -> bool {
+        if self.settings_state.confirming_save {
+            return match key.code {
+                KeyCode::Char('y' | 'Y') | KeyCode::Enter => self.save_settings(),
+                KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                    self.settings_state.confirming_save = false;
+                    true
+                }
+                _ => false,
+            };
+        }
+
         let state = &mut self.settings_state;
 
         // If editing a text/numeric field
@@ -725,8 +739,11 @@ impl App {
             match key.code {
                 KeyCode::Enter => {
                     let field = state.current_field();
-                    if field.apply_value(&mut state.draft, &state.edit_buffer) {
-                        state.unsaved = true;
+                    match field.apply_value(&mut state.draft, &state.edit_buffer) {
+                        Ok(()) => state.unsaved = true,
+                        Err(message) => {
+                            state.flash_message = Some((message.to_string(), Instant::now()));
+                        }
                     }
                     state.editing = false;
                     state.edit_buffer.clear();
@@ -737,7 +754,9 @@ impl App {
                     state.edit_buffer.clear();
                     return true;
                 }
-                KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
+                KeyCode::Char(c)
+                    if state.current_field().is_text() || c.is_ascii_digit() || c == '.' =>
+                {
                     state.edit_buffer.push(c);
                     return true;
                 }
@@ -754,6 +773,9 @@ impl App {
             KeyCode::Esc | KeyCode::Char('S') => {
                 // Close settings, discard unsaved changes
                 self.show_settings = false;
+                if self.config_only {
+                    self.should_quit = true;
+                }
                 true
             }
             KeyCode::Char('j') | KeyCode::Down => {
@@ -803,31 +825,35 @@ impl App {
                 }
             }
             KeyCode::Char('W') => {
-                // Save to disk
-                let old_metric = self.config.sparkline_metric;
-                match self.settings_state.draft.save() {
-                    Ok(()) => {
-                        self.config = self.settings_state.draft.clone();
-                        self.no_cost = self.settings_state.draft.no_cost;
-                        self.settings_state.unsaved = false;
-                        self.settings_state.flash_message =
-                            Some(("Saved!".to_string(), Instant::now()));
-                        // Recompute all-time base if sparkline metric changed
-                        if self.config.sparkline_metric != old_metric {
-                            if let Err(e) = self.compute_all_time_base() {
-                                self.set_warning(format!("History refresh failed: {e}"));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        self.last_warning =
-                            Some((format!("Failed to save config: {e}"), Instant::now()));
-                    }
-                }
+                self.settings_state.confirming_save = self.settings_state.unsaved;
                 true
             }
             _ => false,
         }
+    }
+
+    fn save_settings(&mut self) -> bool {
+        let old_metric = self.config.sparkline_metric;
+        match self.settings_state.draft.save() {
+            Ok(()) => {
+                self.config = self.settings_state.draft.clone();
+                self.no_cost = self.settings_state.draft.no_cost;
+                self.settings_state.unsaved = false;
+                self.settings_state.confirming_save = false;
+                self.settings_state.flash_message = Some(("Saved!".to_string(), Instant::now()));
+                if self.config.sparkline_metric != old_metric {
+                    if let Err(e) = self.compute_all_time_base() {
+                        self.set_warning(format!("History refresh failed: {e}"));
+                    }
+                }
+            }
+            Err(error) => {
+                self.settings_state.confirming_save = false;
+                self.settings_state.flash_message =
+                    Some((format!("Failed to save config: {error}"), Instant::now()));
+            }
+        }
+        true
     }
 
     /// Load all records older than the in-memory window, apply pricing,

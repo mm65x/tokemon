@@ -3,6 +3,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
+use crate::config::Config;
 use crate::tui::app::App;
 use crate::tui::settings_state::SettingField;
 use crate::tui::theme;
@@ -14,7 +15,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     let state = &app.settings_state;
 
     // Size: wide enough for labels + values, tall enough for all fields + sections + footer
-    let popup_width = area.width.min(60);
+    let popup_width = area.width.min(80);
     let popup_height = area.height.min(32);
 
     let popup_area = centered_rect(popup_width, popup_height, area);
@@ -23,10 +24,12 @@ pub fn render(frame: &mut Frame, app: &App) {
     frame.render_widget(Clear, popup_area);
 
     // Title with unsaved indicator
-    let title = if state.unsaved {
-        " Settings [modified] "
+    let title = if state.confirming_save {
+        " Save changes? ".to_string()
+    } else if state.unsaved {
+        " Settings [modified] ".to_string()
     } else {
-        " Settings "
+        " Settings ".to_string()
     };
 
     let block = Block::default()
@@ -45,6 +48,22 @@ pub fn render(frame: &mut Frame, app: &App) {
     // Build the content lines, tracking which line index each field maps to.
     let mut lines: Vec<Line> = Vec::with_capacity(SettingField::COUNT + 10);
     let mut field_line_indices: Vec<usize> = Vec::with_capacity(SettingField::COUNT);
+
+    let config_path = Config::config_path();
+    let source_label = if config_path.exists() {
+        "saved configuration"
+    } else {
+        "built-in defaults (file will be created on save)"
+    };
+    lines.push(Line::from(Span::styled(
+        format!("  Source: {source_label}"),
+        theme::text_dim(),
+    )));
+    lines.push(Line::from(Span::styled(
+        format!("  Path: {}", config_path.display()),
+        theme::text_dim(),
+    )));
+    lines.push(Line::from(""));
 
     for (idx, field) in SettingField::ALL.iter().enumerate() {
         // Section header
@@ -165,11 +184,18 @@ pub fn render(frame: &mut Frame, app: &App) {
     let mut footer_lines: Vec<Line> = Vec::new();
 
     // Unsaved changes prompt
-    if state.unsaved {
+    if state.confirming_save {
+        footer_lines.push(Line::from(vec![
+            Span::styled("  Y/Enter", theme::status_key()),
+            Span::styled(": Confirm save  ", theme::card_secondary()),
+            Span::styled("N/Esc", theme::status_key()),
+            Span::styled(": Cancel", theme::card_secondary()),
+        ]));
+    } else if state.unsaved {
         footer_lines.push(Line::from(vec![
             Span::styled("  W", theme::status_key()),
             Span::styled(
-                ": Save changes  ",
+                ": Review save  ",
                 ratatui::style::Style::default()
                     .fg(theme::YELLOW)
                     .bg(theme::SURFACE),

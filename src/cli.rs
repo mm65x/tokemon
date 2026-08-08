@@ -126,6 +126,8 @@ pub enum Commands {
         #[command(subcommand)]
         command: SourceCommands,
     },
+    /// Open the interactive configuration editor
+    Config,
     /// Show per-session cost breakdown
     Sessions {
         /// Show top N sessions by cost

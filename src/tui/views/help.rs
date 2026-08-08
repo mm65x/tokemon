@@ -34,6 +34,7 @@ pub fn render(frame: &mut Frame) {
 
     let bindings = vec![
         ("t / w / m / a", "Switch scope (Today/Week/Month/All)"),
+        ("T / W / M / A", "Toggle matching summary card only"),
         ("← / →", "Cycle scope left/right"),
         ("g", "Cycle group-by (model/client/both)"),
         ("h", "Toggle historical periods"),
@@ -43,6 +44,7 @@ pub fn render(frame: &mut Frame) {
         ("/", "Filter by model/provider"),
         ("j / ↓", "Scroll table down"),
         ("k / ↑", "Scroll table up"),
+        ("Mouse", "Click scope cards / scroll table"),
         ("S", "Open settings editor"),
         ("?", "Toggle this help"),
         ("Esc", "Back, clear filter, or quit"),

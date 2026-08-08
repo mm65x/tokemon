@@ -8,6 +8,9 @@ pub const BG: Color = Color::Rgb(15, 17, 22);
 /// Slightly lighter surface for panels / cards.
 pub const SURFACE: Color = Color::Rgb(22, 25, 33);
 
+/// Slightly lighter surface used for pointer hover feedback.
+pub const SURFACE_HOVER: Color = Color::Rgb(30, 34, 45);
+
 /// Borders, separators.
 pub const BORDER: Color = Color::Rgb(48, 54, 68);
 

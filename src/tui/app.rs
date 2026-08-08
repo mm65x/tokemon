@@ -3,7 +3,8 @@ use std::time::{Duration as StdDuration, Instant};
 
 use crate::timestamp;
 use chrono::{Duration, NaiveDate, Utc};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use ratatui::layout::Rect;
 
 use crate::config::Config;
 use crate::render::{self, format_tokens_short};
@@ -15,12 +16,16 @@ use super::diff::{self, RowKey};
 use super::event::Event;
 use super::widgets::heatmap::{self, HeatmapDay};
 use super::widgets::spike_chart::{self, SpikeSeries};
+use super::views::dashboard::{self, MouseAction};
 
 /// Duration (in seconds) for the per-cell highlight fade animation.
 const HIGHLIGHT_DURATION_SECS: f64 = 1.5;
 
 /// Duration (in seconds) for warnings to remain visible in the status bar.
 const WARNING_DISPLAY_SECS: f64 = 5.0;
+
+/// Number of rows moved by one mouse-wheel event.
+const MOUSE_SCROLL_ROWS: u16 = 3;
 
 /// Maximum time the interactive UI waits for a cache write lock.
 ///
@@ -48,6 +53,8 @@ pub enum Scope {
 }
 
 impl Scope {
+    pub const ALL: [Self; 4] = [Self::Today, Self::Week, Self::Month, Self::AllTime];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -68,11 +75,66 @@ impl Scope {
             Self::AllTime => NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         }
     }
+
+    #[must_use]
+    pub(crate) const fn card_index(self) -> usize {
+        match self {
+            Self::Today => 0,
+            Self::Week => 1,
+            Self::Month => 2,
+            Self::AllTime => 3,
+        }
+    }
+
+    #[must_use]
+    const fn from_card_toggle_key(key: char) -> Option<Self> {
+        match key {
+            'T' => Some(Self::Today),
+            'W' => Some(Self::Week),
+            'M' => Some(Self::Month),
+            'A' => Some(Self::AllTime),
+            _ => None,
+        }
+    }
 }
 
 // ── Summary card data ─────────────────────────────────────────────────────
 
-/// Data for one summary card (Today / This Week / This Month).
+/// Session-only visibility state for the four summary cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SummaryCardVisibility {
+    visible: [bool; 4],
+}
+
+impl Default for SummaryCardVisibility {
+    fn default() -> Self {
+        Self { visible: [true; 4] }
+    }
+}
+
+impl SummaryCardVisibility {
+    pub const fn toggle(&mut self, scope: Scope) {
+        let index = scope.card_index();
+        self.visible[index] = !self.visible[index];
+    }
+
+    #[must_use]
+    pub const fn is_visible(self, scope: Scope) -> bool {
+        self.visible[scope.card_index()]
+    }
+
+    #[must_use]
+    pub fn any_visible(self) -> bool {
+        self.visible.iter().any(|visible| *visible)
+    }
+
+    #[must_use]
+    pub fn visible_count(self) -> usize {
+        self.visible.iter().filter(|visible| **visible).count()
+    }
+}
+
+/// Data for one summary card (Today / This Week / This Month / All Time).
 #[derive(Debug, Clone)]
 pub struct CardData {
     pub label: &'static str,
@@ -81,6 +143,13 @@ pub struct CardData {
     pub sparkline: Vec<u64>,
     /// Trend indicator: positive = increasing, negative = decreasing, zero = flat.
     pub trend: i8,
+}
+
+/// Interactive region currently under the pointer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HoverTarget {
+    Card(Scope),
+    TableRow(RowKey),
 }
 
 impl CardData {
@@ -163,6 +232,8 @@ pub struct App {
     pub show_history: bool,
     /// Summary cards: Today, This Week, This Month, All Time.
     pub cards: [CardData; 4],
+    /// Which summary cards are visible for this TUI session.
+    pub card_visibility: SummaryCardVisibility,
     /// Detail table rows for the selected scope.
     pub detail_models: Vec<ModelUsage>,
     /// Detail totals.
@@ -189,6 +260,8 @@ pub struct App {
     /// it was last updated. Used for the green fade animation on
     /// individual table cells.
     pub highlight_map: HashMap<RowKey, Instant>,
+    /// Interactive region currently under the pointer, if any.
+    pub(crate) hovered: Option<HoverTarget>,
     /// Last warning message from the background watcher or data loading,
     /// with the instant it was received. Displayed in the status bar
     /// for a few seconds then cleared.
@@ -276,6 +349,7 @@ impl App {
                     trend: 0,
                 },
             ],
+            card_visibility: SummaryCardVisibility::default(),
             detail_models: Vec::new(),
             detail_total_cost: 0.0,
             detail_total_tokens: 0,
@@ -289,6 +363,7 @@ impl App {
             applied_filter: String::new(),
             sort_order: SortOrder::CostDesc,
             highlight_map: HashMap::new(),
+            hovered: None,
             last_warning: None,
             fullscreen: FullscreenView::None,
             heatmap_data: Vec::new(),
@@ -309,24 +384,11 @@ impl App {
             all_time_base_start_week: None,
             all_time_base_models: Vec::new(),
         };
-        // Load pricing engine once. Try offline first (fast path using
-        // cached pricing.json). If the cache doesn't exist yet (fresh
-        // install), fall back to a one-time online fetch if not in offline mode.
+        // Load pricing engine once. Online loading already uses a fresh cache
+        // without fetching, and refreshes stale data before falling back to it.
         if !config.no_cost {
-            match cost::PricingEngine::load(true) {
-                Ok(engine) => {
-                    if engine.is_empty() && !offline {
-                        match cost::PricingEngine::load(false) {
-                            Ok(online_engine) => app.pricing = Some(online_engine),
-                            Err(e) => {
-                                app.last_warning =
-                                    Some((format!("Pricing unavailable: {e}"), Instant::now()));
-                            }
-                        }
-                    } else {
-                        app.pricing = Some(engine);
-                    }
-                }
+            match cost::PricingEngine::load(offline) {
+                Ok(engine) => app.pricing = Some(engine),
                 Err(e) => {
                     app.last_warning = Some((format!("Pricing unavailable: {e}"), Instant::now()));
                 }
@@ -345,10 +407,15 @@ impl App {
     }
 
     /// Handle an incoming event. Returns `true` if the UI needs a redraw.
-    pub fn handle_event(&mut self, event: &Event) -> bool {
+    pub fn handle_event(&mut self, event: &Event, terminal_area: Rect) -> bool {
         match event {
             Event::Key(key) => {
                 let changed = self.handle_key(*key);
+                self.dirty |= changed;
+                changed
+            }
+            Event::Mouse(mouse) => {
+                let changed = self.handle_mouse(*mouse, terminal_area);
                 self.dirty |= changed;
                 changed
             }
@@ -399,6 +466,30 @@ impl App {
             }
             Event::Render => false,
         }
+    }
+
+    fn handle_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
+        if self.show_settings || self.show_help || self.filter_active {
+            return self.set_hover(None);
+        }
+
+        let hover_changed = self.set_hover(dashboard::hover_target(terminal_area, self, mouse));
+        let action_changed =
+            match dashboard::mouse_action(terminal_area, self.card_visibility, mouse) {
+                Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
+                Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
+                Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
+                None => false,
+            };
+        hover_changed || action_changed
+    }
+
+    fn set_hover(&mut self, target: Option<HoverTarget>) -> bool {
+        if self.hovered == target {
+            return false;
+        }
+        self.hovered = target;
+        true
     }
 
     /// Returns the current warning message if it's still fresh (< 5 seconds old).
@@ -472,6 +563,13 @@ impl App {
             };
         }
 
+        if let KeyCode::Char(c) = key.code {
+            if let Some(scope) = Scope::from_card_toggle_key(c) {
+                self.card_visibility.toggle(scope);
+                return true;
+            }
+        }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
                 if self.applied_filter.is_empty() {
@@ -498,26 +596,10 @@ impl App {
                 self.filter_text = self.applied_filter.clone();
                 true
             }
-            KeyCode::Char('t') => {
-                self.scope = Scope::Today;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('w') => {
-                self.scope = Scope::Week;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('m') => {
-                self.scope = Scope::Month;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('a') => {
-                self.scope = Scope::AllTime;
-                self.reset_view_state();
-                true
-            }
+            KeyCode::Char('t') => self.select_scope(Scope::Today),
+            KeyCode::Char('w') => self.select_scope(Scope::Week),
+            KeyCode::Char('m') => self.select_scope(Scope::Month),
+            KeyCode::Char('a') => self.select_scope(Scope::AllTime),
             KeyCode::Char('s') => {
                 self.sort_order = self.sort_order.next();
                 self.reset_view_state();
@@ -548,16 +630,8 @@ impl App {
                 self.fullscreen = FullscreenView::SpikeChart;
                 true
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                let max =
-                    u16::try_from(self.rendered_row_count().saturating_sub(1)).unwrap_or(u16::MAX);
-                self.scroll_offset = self.scroll_offset.saturating_add(1).min(max);
-                true
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
-                true
-            }
+            KeyCode::Char('j') | KeyCode::Down => self.scroll_down(1),
+            KeyCode::Char('k') | KeyCode::Up => self.scroll_up(1),
             KeyCode::Left => {
                 let new_scope = match self.scope {
                     Scope::Today | Scope::Week => Scope::Today,
@@ -587,6 +661,33 @@ impl App {
                 }
             }
             _ => false,
+        }
+    }
+
+    fn select_scope(&mut self, scope: Scope) -> bool {
+        self.scope = scope;
+        self.reset_view_state();
+        true
+    }
+
+    fn scroll_down(&mut self, rows: u16) -> bool {
+        let max = u16::try_from(self.rendered_row_count().saturating_sub(1)).unwrap_or(u16::MAX);
+        let next = self.scroll_offset.saturating_add(rows).min(max);
+        if next == self.scroll_offset {
+            false
+        } else {
+            self.scroll_offset = next;
+            true
+        }
+    }
+
+    fn scroll_up(&mut self, rows: u16) -> bool {
+        let next = self.scroll_offset.saturating_sub(rows);
+        if next == self.scroll_offset {
+            false
+        } else {
+            self.scroll_offset = next;
+            true
         }
     }
 
@@ -1234,5 +1335,49 @@ mod tests {
         let details = vec![ModelUsage::default(); 4];
         let history = vec![summary(2)];
         assert_eq!(table_row_count(&details, &history, false), 5);
+    }
+
+    #[test]
+    fn summary_cards_start_visible_and_toggle_independently() {
+        let mut visibility = SummaryCardVisibility::default();
+        assert_eq!(visibility.visible_count(), 4);
+        assert!(Scope::ALL
+            .into_iter()
+            .all(|scope| visibility.is_visible(scope)));
+
+        visibility.toggle(Scope::Week);
+        visibility.toggle(Scope::AllTime);
+
+        assert!(visibility.is_visible(Scope::Today));
+        assert!(!visibility.is_visible(Scope::Week));
+        assert!(visibility.is_visible(Scope::Month));
+        assert!(!visibility.is_visible(Scope::AllTime));
+        assert_eq!(visibility.visible_count(), 2);
+
+        visibility.toggle(Scope::Week);
+        assert!(visibility.is_visible(Scope::Week));
+        assert_eq!(visibility.visible_count(), 3);
+    }
+
+    #[test]
+    fn all_summary_cards_can_be_hidden() {
+        let mut visibility = SummaryCardVisibility::default();
+        for scope in Scope::ALL {
+            visibility.toggle(scope);
+        }
+
+        assert!(!visibility.any_visible());
+        assert_eq!(visibility.visible_count(), 0);
+    }
+
+    #[test]
+    fn only_uppercase_scope_keys_toggle_cards() {
+        assert_eq!(Scope::from_card_toggle_key('T'), Some(Scope::Today));
+        assert_eq!(Scope::from_card_toggle_key('W'), Some(Scope::Week));
+        assert_eq!(Scope::from_card_toggle_key('M'), Some(Scope::Month));
+        assert_eq!(Scope::from_card_toggle_key('A'), Some(Scope::AllTime));
+        assert_eq!(Scope::from_card_toggle_key('t'), None);
+        assert_eq!(Scope::from_card_toggle_key('w'), None);
+        assert_eq!(Scope::from_card_toggle_key('x'), None);
     }
 }

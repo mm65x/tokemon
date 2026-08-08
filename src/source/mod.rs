@@ -3,6 +3,7 @@ pub mod claude_code;
 pub mod cline;
 pub mod cline_format;
 pub mod codex;
+pub mod continue_dev;
 pub mod copilot;
 pub mod cursor;
 pub mod discover;
@@ -86,6 +87,7 @@ impl SourceSet {
                 Box::new(roo_code::RooCodeSource::new()),
                 Box::new(kilo_code::KiloCodeSource::new()),
                 Box::new(copilot::CopilotSource::new()),
+                Box::new(continue_dev::ContinueSource::new()),
                 Box::new(pi_agent::PiAgentSource::new()),
                 Box::new(kimi::KimiSource::new()),
                 Box::new(droid::DroidSource::new()),

@@ -54,6 +54,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     let bindings: Vec<(&str, &str)> = if app.fullscreen == FullscreenView::None {
         vec![
             ("t/w/m/a", "scope"),
+            ("T/W/M/A", "cards"),
             ("g", &group_label),
             ("h", "history"),
             ("c", "calendar"),

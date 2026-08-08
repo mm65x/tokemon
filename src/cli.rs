@@ -1,5 +1,6 @@
 use chrono::NaiveDate;
 use clap::{Parser, Subcommand, ValueEnum};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum DisplayMode {
@@ -120,6 +121,11 @@ pub enum Commands {
     Discover,
     /// Generate default config file at ~/.config/tokemon/config.toml
     Init,
+    /// Manage declarative local usage sources
+    Source {
+        #[command(subcommand)]
+        command: SourceCommands,
+    },
     /// Show per-session cost breakdown
     Sessions {
         /// Show top N sessions by cost
@@ -143,5 +149,14 @@ pub enum Commands {
         /// Data refresh interval in seconds (0 = use config or default of 2s)
         #[arg(long, default_value = "0")]
         interval: u64,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SourceCommands {
+    /// Validate a definition and preview discovered records
+    Validate {
+        /// TOML definition file to validate
+        definition: PathBuf,
     },
 }

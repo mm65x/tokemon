@@ -33,10 +33,10 @@ mod tui;
 mod types;
 
 use cache::Cache;
-use cli::{Cli, Commands, Frequency};
+use cli::{Cli, Commands, Frequency, SourceCommands};
 use config::Config;
 use pipeline::load_and_price;
-use source::SourceSet;
+use source::{Source, SourceSet};
 use types::{Report, SessionReport};
 
 fn main() -> anyhow::Result<()> {
@@ -50,6 +50,7 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Commands::Init => cmd_init(),
+        Commands::Source { command } => cmd_source(command),
         Commands::Statusline => cmd_statusline(&cli, &config),
         Commands::Budget => cmd_budget(&cli, &config),
         Commands::Sessions { top } => cmd_sessions(&cli, &config, *top),
@@ -99,6 +100,38 @@ fn cmd_init() -> anyhow::Result<()> {
     let path = Config::write_default()?;
     println!("Config written to: {}", path.display());
     println!("Edit this file to customize default behavior.");
+    Ok(())
+}
+
+fn cmd_source(command: &SourceCommands) -> anyhow::Result<()> {
+    match command {
+        SourceCommands::Validate { definition } => {
+            let source = source::custom::CustomSource::from_file(definition)?;
+            let files = source.discover_files();
+            println!("Valid custom source: {}", source.display_name());
+            println!("Schema version: {}", source.definition().schema_version);
+            println!("Discovered files: {}", files.len());
+            if let Some(sample) = files.first() {
+                let records = source.parse_file(sample)?;
+                println!("Preview file: {}", sample.display());
+                println!("Parsed records: {}", records.len());
+                for record in records.iter().take(5) {
+                    println!(
+                        "  {} | model={} | input={} | output={} | cache_read={} | cache_write={} | thinking={}",
+                        record.timestamp.to_rfc3339(),
+                        record.model.as_deref().unwrap_or("unknown"),
+                        record.input_tokens,
+                        record.output_tokens,
+                        record.cache_read_tokens,
+                        record.cache_creation_tokens,
+                        record.thinking_tokens,
+                    );
+                }
+            } else {
+                println!("No matching files found.");
+            }
+        }
+    }
     Ok(())
 }
 

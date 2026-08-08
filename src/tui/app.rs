@@ -15,6 +15,8 @@ use crate::{cache, cost, dedup, rollup};
 use super::diff::{self, RowKey};
 use super::event::Event;
 use super::views::dashboard::{self, MouseAction};
+use super::widgets::heatmap::{self, HeatmapDay};
+use super::widgets::spike_chart::{self, SpikeSeries};
 
 /// Duration (in seconds) for the per-cell highlight fade animation.
 const HIGHLIGHT_DURATION_SECS: f64 = 1.5;
@@ -32,6 +34,14 @@ const MOUSE_SCROLL_ROWS: u16 = 3;
 const TUI_CACHE_BUSY_TIMEOUT: StdDuration = StdDuration::from_millis(100);
 
 // ── View scope ────────────────────────────────────────────────────────────
+
+/// Optional fullscreen visualization replacing the normal dashboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FullscreenView {
+    None,
+    Heatmap,
+    SpikeChart,
+}
 
 /// Which time window the detail table shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -256,6 +266,12 @@ pub struct App {
     /// with the instant it was received. Displayed in the status bar
     /// for a few seconds then cleared.
     pub last_warning: Option<(String, Instant)>,
+    /// Optional fullscreen visualization.
+    pub fullscreen: FullscreenView,
+    /// Daily contribution data loaded on demand.
+    pub heatmap_data: Vec<HeatmapDay>,
+    /// Today's token activity loaded on demand.
+    pub spike_data: Option<SpikeSeries>,
     /// Whether the settings overlay is shown.
     pub show_settings: bool,
     /// Settings editor state.
@@ -349,6 +365,9 @@ impl App {
             highlight_map: HashMap::new(),
             hovered: None,
             last_warning: None,
+            fullscreen: FullscreenView::None,
+            heatmap_data: Vec::new(),
+            spike_data: None,
             show_settings: false,
             settings_state: SettingsState::new(config),
             dirty: true,
@@ -409,7 +428,11 @@ impl App {
                 if let Err(e) = self.poll_sources() {
                     self.set_warning(format!("Data refresh failed: {e}"));
                 }
-                self.dirty |= self.reload_from_cache();
+                let data_changed = self.reload_from_cache();
+                if data_changed {
+                    self.refresh_active_visual();
+                }
+                self.dirty |= data_changed;
                 // Expire old warnings
                 if let Some((_, t)) = &self.last_warning {
                     if t.elapsed().as_secs_f64() >= WARNING_DISPLAY_SECS {
@@ -429,6 +452,7 @@ impl App {
             Event::DataChanged => {
                 // The watcher already wrote to the cache — just re-read it.
                 self.dirty |= self.reload_from_cache();
+                self.refresh_active_visual();
                 self.dirty
             }
             Event::Warning(msg) => {
@@ -503,6 +527,42 @@ impl App {
             return self.handle_filter_key(key);
         }
 
+        if self.fullscreen != FullscreenView::None {
+            return match key.code {
+                KeyCode::Esc => {
+                    self.fullscreen = FullscreenView::None;
+                    true
+                }
+                KeyCode::Char('q') => {
+                    self.should_quit = true;
+                    false
+                }
+                KeyCode::Char('?') => {
+                    self.show_help = true;
+                    true
+                }
+                KeyCode::Char('c') => {
+                    self.fullscreen = if self.fullscreen == FullscreenView::Heatmap {
+                        FullscreenView::None
+                    } else {
+                        self.recompute_heatmap();
+                        FullscreenView::Heatmap
+                    };
+                    true
+                }
+                KeyCode::Char('v') => {
+                    self.fullscreen = if self.fullscreen == FullscreenView::SpikeChart {
+                        FullscreenView::None
+                    } else {
+                        self.recompute_spike_chart();
+                        FullscreenView::SpikeChart
+                    };
+                    true
+                }
+                _ => false,
+            };
+        }
+
         if let KeyCode::Char(c) = key.code {
             if let Some(scope) = Scope::from_card_toggle_key(c) {
                 self.card_visibility.toggle(scope);
@@ -558,6 +618,16 @@ impl App {
             KeyCode::Char('h') => {
                 self.show_history = !self.show_history;
                 self.recompute_detail();
+                true
+            }
+            KeyCode::Char('c') => {
+                self.recompute_heatmap();
+                self.fullscreen = FullscreenView::Heatmap;
+                true
+            }
+            KeyCode::Char('v') => {
+                self.recompute_spike_chart();
+                self.fullscreen = FullscreenView::SpikeChart;
                 true
             }
             KeyCode::Char('j') | KeyCode::Down => self.scroll_down(1),
@@ -1127,6 +1197,44 @@ impl App {
         } else {
             self.history_summaries.clear();
         }
+    }
+
+    fn refresh_active_visual(&mut self) {
+        match self.fullscreen {
+            FullscreenView::None => {}
+            FullscreenView::Heatmap => self.recompute_heatmap(),
+            FullscreenView::SpikeChart => self.recompute_spike_chart(),
+        }
+        self.dirty |= self.fullscreen != FullscreenView::None;
+    }
+
+    fn recompute_heatmap(&mut self) {
+        let since = Utc::now().date_naive() - Duration::days(364);
+        match cache::Cache::open()
+            .and_then(|cache| cache.load_entries_filtered(Some(since), None, &[]))
+        {
+            Ok(records) => {
+                self.heatmap_data = heatmap::build_heatmap_data(&records);
+            }
+            Err(error) => {
+                self.heatmap_data.clear();
+                self.last_warning = Some((
+                    format!("Contribution history unavailable: {error}"),
+                    Instant::now(),
+                ));
+            }
+        }
+    }
+
+    fn recompute_spike_chart(&mut self) {
+        let now = Utc::now();
+        let start = spike_chart::start_of_day(now);
+        self.spike_data = Some(spike_chart::build_spike_data(
+            &self.cached_records,
+            start,
+            now,
+            5 * 60,
+        ));
     }
 }
 

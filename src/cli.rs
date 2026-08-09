@@ -113,6 +113,8 @@ pub enum Frequency {
 pub enum Commands {
     /// Generate a static usage report (table, json, or csv)
     Report,
+    /// Emit a versioned machine-readable status document
+    Status,
     /// Compact one-line output for shell prompts and status bars
     Statusline,
     /// Show budget progress against configured limits

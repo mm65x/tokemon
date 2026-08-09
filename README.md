@@ -25,6 +25,7 @@ Unified token usage tracking across all your AI coding tools. `tokemon top` prov
 - **SQLite cache** — parsed data is cached for instant repeated runs and survives log rotation
 - **Budget pacemaker** — set daily/weekly/monthly spending limits with progress tracking
 - **Statusline mode** — compact one-line output for shell prompts and status bars (`tokemon statusline`)
+- **Versioned status JSON** — stable machine-readable summaries for lightweight clients (`tokemon status --json`)
 - **Session breakdown** — per-session cost analysis across all providers (`tokemon sessions`)
 - **MCP server** — expose usage data to AI tools via Model Context Protocol (`tokemon mcp`)
 - **Two display modes** — compact one-row-per-day (default) or detailed per-model breakdown with responsive API Provider and Client columns
@@ -111,6 +112,7 @@ tokemon [OPTIONS] <COMMAND>
 Commands:
   top          Live monitoring dashboard
   report       Generate a static usage report (table, json, or csv)
+  status       Emit a versioned machine-readable status document
   statusline   Compact one-line output for shell prompts and status bars
   budget       Show spending vs configured limits
   sessions     Show per-session cost breakdown

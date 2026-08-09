@@ -1,4 +1,4 @@
-use crate::types::{Report, SessionReport};
+use crate::types::{Report, SessionReport, StatusReport};
 
 pub fn print_json(report: &Report) {
     match serde_json::to_string_pretty(report) {
@@ -11,5 +11,12 @@ pub fn print_sessions_json(report: &SessionReport) {
     match serde_json::to_string_pretty(report) {
         Ok(json) => println!("{json}"),
         Err(e) => eprintln!("[tokemon] Error serializing sessions: {e}"),
+    }
+}
+
+pub fn print_status_json(status: &StatusReport) {
+    match serde_json::to_string_pretty(status) {
+        Ok(json) => println!("{json}"),
+        Err(e) => eprintln!("[tokemon] Error serializing status: {e}"),
     }
 }

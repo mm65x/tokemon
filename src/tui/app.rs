@@ -492,6 +492,12 @@ impl App {
     }
 
     fn handle_settings_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
+        // Keep an in-progress text edit isolated until Enter applies it or
+        // Escape cancels it, matching the keyboard editing behavior.
+        if self.settings_state.editing {
+            return false;
+        }
+
         match settings::mouse_action(terminal_area, self, mouse) {
             Some(SettingsMouseAction::SelectField(field)) => {
                 if self.settings_state.selected == field {

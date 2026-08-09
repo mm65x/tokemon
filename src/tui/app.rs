@@ -15,6 +15,7 @@ use crate::{cache, cost, dedup, rollup};
 use super::diff::{self, RowKey};
 use super::event::Event;
 use super::views::dashboard::{self, MouseAction};
+use super::views::settings::{self, MouseAction as SettingsMouseAction};
 use super::widgets::heatmap::{self, HeatmapDay};
 use super::widgets::spike_chart::{self, SpikeSeries};
 
@@ -472,7 +473,10 @@ impl App {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
-        if self.show_settings || self.show_help || self.filter_active {
+        if self.show_settings {
+            return self.handle_settings_mouse(mouse, terminal_area);
+        }
+        if self.show_help || self.filter_active {
             return self.set_hover(None);
         }
 
@@ -485,6 +489,65 @@ impl App {
                 None => false,
             };
         hover_changed || action_changed
+    }
+
+    fn handle_settings_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
+        // Keep an in-progress text edit isolated until Enter applies it or
+        // Escape cancels it, matching the keyboard editing behavior.
+        if self.settings_state.editing {
+            return false;
+        }
+
+        match settings::mouse_action(terminal_area, self, mouse) {
+            Some(SettingsMouseAction::SelectField(field)) => {
+                if self.settings_state.selected == field {
+                    false
+                } else {
+                    self.settings_state.selected = field;
+                    true
+                }
+            }
+            Some(SettingsMouseAction::ActivateField(field)) => {
+                self.settings_state.selected = field;
+                self.activate_current_setting()
+            }
+            Some(SettingsMouseAction::ScrollUp) => {
+                let next = self.settings_state.selected.saturating_sub(1);
+                if next == self.settings_state.selected {
+                    false
+                } else {
+                    self.settings_state.selected = next;
+                    true
+                }
+            }
+            Some(SettingsMouseAction::ScrollDown) => {
+                let next = (self.settings_state.selected + 1)
+                    .min(crate::tui::settings_state::SettingField::COUNT - 1);
+                if next == self.settings_state.selected {
+                    false
+                } else {
+                    self.settings_state.selected = next;
+                    true
+                }
+            }
+            Some(SettingsMouseAction::ReviewSave) => {
+                self.settings_state.confirming_save = self.settings_state.unsaved;
+                true
+            }
+            Some(SettingsMouseAction::ConfirmSave) => self.save_settings(),
+            Some(SettingsMouseAction::CancelSave) => {
+                self.settings_state.confirming_save = false;
+                true
+            }
+            Some(SettingsMouseAction::Discard | SettingsMouseAction::Close) => {
+                self.show_settings = false;
+                if self.config_only {
+                    self.should_quit = true;
+                }
+                true
+            }
+            None => false,
+        }
     }
 
     fn set_hover(&mut self, target: Option<HoverTarget>) -> bool {
@@ -786,23 +849,7 @@ impl App {
                 state.selected = state.selected.saturating_sub(1);
                 true
             }
-            KeyCode::Enter | KeyCode::Char(' ') => {
-                let field = state.current_field();
-                if field.is_bool() {
-                    field.toggle_bool(&mut state.draft);
-                    state.unsaved = true;
-                    true
-                } else if field.is_enum() {
-                    field.cycle_enum(&mut state.draft);
-                    state.unsaved = true;
-                    true
-                } else {
-                    // Enter edit mode for numeric fields
-                    state.editing = true;
-                    state.edit_buffer = field.edit_value(&state.draft);
-                    true
-                }
-            }
+            KeyCode::Enter | KeyCode::Char(' ') => self.activate_current_setting(),
             KeyCode::Left => {
                 let field = state.current_field();
                 if field.is_enum() {
@@ -830,6 +877,21 @@ impl App {
             }
             _ => false,
         }
+    }
+
+    fn activate_current_setting(&mut self) -> bool {
+        let field = self.settings_state.current_field();
+        if field.is_bool() {
+            field.toggle_bool(&mut self.settings_state.draft);
+            self.settings_state.unsaved = true;
+        } else if field.is_enum() {
+            field.cycle_enum(&mut self.settings_state.draft);
+            self.settings_state.unsaved = true;
+        } else {
+            self.settings_state.editing = true;
+            self.settings_state.edit_buffer = field.edit_value(&self.settings_state.draft);
+        }
+        true
     }
 
     fn save_settings(&mut self) -> bool {

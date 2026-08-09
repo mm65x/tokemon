@@ -25,6 +25,8 @@ pub(crate) enum MouseAction {
 
 #[derive(Debug, Clone, Copy)]
 struct SettingsLayout {
+    popup: Rect,
+    inner: Rect,
     content: Rect,
     footer: Rect,
     scroll_offset: usize,
@@ -36,11 +38,8 @@ pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let state = &app.settings_state;
 
-    // Size: wide enough for labels + values, tall enough for all fields + sections + footer
-    let popup_width = area.width.min(80);
-    let popup_height = area.height.min(32);
-
-    let popup_area = centered_rect(popup_width, popup_height, area);
+    let layout = settings_layout(area, app);
+    let popup_area = layout.popup;
 
     // Clear the area behind the popup
     frame.render_widget(Clear, popup_area);
@@ -64,12 +63,11 @@ pub fn render(frame: &mut Frame, app: &App) {
         }))
         .style(theme::card());
 
-    let inner = block.inner(popup_area);
+    let inner = layout.inner;
     frame.render_widget(block, popup_area);
 
     // Build the content lines, tracking which line index each field maps to.
     let mut lines: Vec<Line> = Vec::with_capacity(SettingField::COUNT + 10);
-    let mut field_line_indices: Vec<usize> = Vec::with_capacity(SettingField::COUNT);
 
     let config_path = Config::config_path();
     let source_label = if config_path.exists() {
@@ -98,8 +96,6 @@ pub fn render(frame: &mut Frame, app: &App) {
                 theme::header(),
             )));
         }
-
-        field_line_indices.push(lines.len()); // record the line index for this field
 
         let is_selected = idx == state.selected;
         let value_str = if state.editing && is_selected {
@@ -177,30 +173,9 @@ pub fn render(frame: &mut Frame, app: &App) {
         )));
     }
 
-    // Split inner into scrollable content area and fixed footer
-    let footer_height: u16 = if state.unsaved { 3 } else { 2 };
-    let content_height = inner.height.saturating_sub(footer_height);
-    let content_area = Rect::new(inner.x, inner.y, inner.width, content_height);
-    let footer_area = Rect::new(
-        inner.x,
-        inner.y + content_height,
-        inner.width,
-        footer_height,
-    );
-
-    // Determine scroll for content area
-    let visible_height = content_height as usize;
-    let selected_line_idx = field_line_indices.get(state.selected).copied().unwrap_or(0);
-
-    let scroll_offset = if selected_line_idx >= visible_height {
-        selected_line_idx.saturating_sub(visible_height / 2)
-    } else {
-        0
-    };
-
     #[allow(clippy::cast_possible_truncation)]
-    let paragraph = Paragraph::new(lines).scroll((scroll_offset as u16, 0));
-    frame.render_widget(paragraph, content_area);
+    let paragraph = Paragraph::new(lines).scroll((layout.scroll_offset as u16, 0));
+    frame.render_widget(paragraph, layout.content);
 
     // Fixed footer — always visible
     let mut footer_lines: Vec<Line> = Vec::new();
@@ -255,7 +230,7 @@ pub fn render(frame: &mut Frame, app: &App) {
     }
 
     let footer_paragraph = Paragraph::new(footer_lines);
-    frame.render_widget(footer_paragraph, footer_area);
+    frame.render_widget(footer_paragraph, layout.footer);
 }
 
 /// Translate a pointer event into a settings action using the same geometry as
@@ -329,6 +304,8 @@ fn settings_layout(area: Rect, app: &App) -> SettingsLayout {
     };
 
     SettingsLayout {
+        popup: popup_area,
+        inner,
         content,
         footer,
         scroll_offset,
@@ -435,6 +412,8 @@ mod tests {
     #[test]
     fn visible_field_rows_resolve_and_headers_do_not() {
         let layout = SettingsLayout {
+            popup: Rect::default(),
+            inner: Rect::default(),
             content: Rect::new(5, 4, 30, 6),
             footer: Rect::new(5, 10, 30, 2),
             scroll_offset: field_line_indices()[0],
@@ -449,6 +428,8 @@ mod tests {
     fn scroll_offset_resolves_later_fields() {
         let indices = field_line_indices();
         let layout = SettingsLayout {
+            popup: Rect::default(),
+            inner: Rect::default(),
             content: Rect::new(0, 0, 20, 4),
             footer: Rect::new(0, 4, 20, 2),
             scroll_offset: indices[indices.len() - 1],
@@ -461,6 +442,8 @@ mod tests {
     #[test]
     fn footer_clicks_map_to_save_and_close_actions() {
         let layout = SettingsLayout {
+            popup: Rect::default(),
+            inner: Rect::default(),
             content: Rect::new(0, 0, 20, 4),
             footer: Rect::new(0, 4, 20, 3),
             scroll_offset: 0,

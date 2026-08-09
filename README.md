@@ -200,7 +200,7 @@ Prices are in USD per token. Entries are merged by exact model key after the bas
 | Cline | VSCode globalStorage | JSON |
 | Roo Code | VSCode globalStorage | JSON |
 | Kilo Code | VSCode globalStorage | JSON |
-| Copilot | VSCode workspaceStorage | JSON (stub) |
+| Copilot | VSCode globalStorage telemetry directories | JSONL |
 | Cursor | `~/.config/tokscale/cursor-cache/usage*.csv` | CSV |
 | Qwen Code | `~/.qwen/tmp/{project}/session.json` | JSON |
 | Pi Agent | `~/.pi/agent/sessions/{project}/*.jsonl` | JSONL |

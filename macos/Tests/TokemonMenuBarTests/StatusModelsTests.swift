@@ -80,4 +80,41 @@ final class StatusModelsTests: XCTestCase {
             XCTAssertEqual(error as? StatusDecoderError, .unsupportedSchema(2))
         }
     }
+
+    func testDecodesEmptyHistoryWithUnavailablePricing() throws {
+        let data = Data(
+            """
+            {
+              "schema_version": 1,
+              "generated_at": "2026-08-11T12:00:00Z",
+              "state": "empty",
+              "scope": {"frequency": "daily", "since": "2026-08-11", "until": "2026-08-11"},
+              "providers": [], "summaries": [], "total_cost": 0,
+              "total_tokens": 0, "total_requests": 0,
+              "capabilities": {
+                "cost": false, "date_filters": true, "provider_filters": true,
+                "periodic_summaries": true, "session_view": true
+              }
+            }
+            """.utf8
+        )
+
+        let report = try StatusDecoder.decode(data)
+
+        XCTAssertEqual(report.state, "empty")
+        XCTAssertFalse(report.capabilities.cost)
+        XCTAssertTrue(report.summaries.isEmpty)
+    }
+
+    func testRejectsMalformedJSON() {
+        XCTAssertThrowsError(try StatusDecoder.decode(Data("not json".utf8))) { error in
+            XCTAssertTrue(error is DecodingError)
+        }
+    }
+
+    func testRejectsMissingRequiredFields() {
+        XCTAssertThrowsError(try StatusDecoder.decode(Data("{\"schema_version\":1}".utf8))) { error in
+            XCTAssertTrue(error is DecodingError)
+        }
+    }
 }

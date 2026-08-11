@@ -252,7 +252,10 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
 
 fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let freq = cli.frequency;
-    let entries = load_and_price(
+    let pipeline::LoadedEntries {
+        entries,
+        pricing_available,
+    } = pipeline::load_and_price_with_status(
         &pipeline::PipelineOptions::from_cli_config(cli, config),
         false,
     )?;
@@ -293,7 +296,7 @@ fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         total_tokens,
         total_requests,
         capabilities: StatusCapabilities {
-            cost: !cli.no_cost && !config.no_cost,
+            cost: pricing_available,
             date_filters: true,
             provider_filters: true,
             periodic_summaries: true,

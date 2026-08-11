@@ -13,6 +13,49 @@ use crate::types::Record;
 const DEFINITION_DIR: &str = "sources";
 const MAX_DEPTH: usize = 8;
 
+/// Return the directory containing user-defined source definitions.
+#[must_use]
+pub fn definition_dir() -> PathBuf {
+    paths::config_dir().join(DEFINITION_DIR)
+}
+
+/// Return the filename used for a source definition.
+#[must_use]
+pub fn definition_path(name: &str) -> PathBuf {
+    definition_dir().join(format!("{name}.toml"))
+}
+
+/// Load definition files without constructing source instances.
+pub fn load_definitions() -> Vec<(PathBuf, CustomSourceDefinition)> {
+    crate::source::discover::walk_by_ext(&definition_dir(), "toml", 2)
+        .into_iter()
+        .filter_map(|path| {
+            fs::read_to_string(&path)
+                .ok()
+                .and_then(|content| toml::from_str(&content).ok())
+                .map(|definition| (path, definition))
+        })
+        .collect()
+}
+
+/// Validate and persist a user-defined source definition.
+pub fn save_definition(definition: &CustomSourceDefinition) -> anyhow::Result<PathBuf> {
+    CustomSource::from_definition(definition.clone())?;
+    let path = definition_path(&definition.name);
+    fs::create_dir_all(definition_dir())?;
+    fs::write(&path, toml::to_string_pretty(definition)?)?;
+    Ok(path)
+}
+
+/// Remove a saved source definition.
+pub fn delete_definition(name: &str) -> anyhow::Result<()> {
+    let path = definition_path(name);
+    if path.exists() {
+        fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
 /// Versioned, data-only definition for a local JSONL source.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -112,8 +155,7 @@ impl CustomSource {
     /// Return all locally configured custom sources, skipping invalid files.
     #[must_use]
     pub fn load_configured() -> Vec<Self> {
-        let definition_dir = paths::config_dir().join(DEFINITION_DIR);
-        crate::source::discover::walk_by_ext(&definition_dir, "toml", 2)
+        crate::source::discover::walk_by_ext(&definition_dir(), "toml", 2)
             .into_iter()
             .filter_map(|path| match Self::from_file(&path) {
                 Ok(source) => Some(source),

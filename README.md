@@ -188,6 +188,12 @@ Create `~/.config/tokemon/pricing_override.json` to replace downloaded prices or
 
 Prices are in USD per token. Entries are merged by exact model key after the base pricing data is loaded. Supplied fields replace base values, while omitted fields keep their base values. The file is optional and changes take effect the next time `tokemon` starts.
 
+### Guided custom-source setup
+
+Run `tokemon source configure` to open the interactive source editor. It can create a generic JSONL template or a nested-usage template, edit the root paths and dotted JSON mappings, test a definition against bounded local discovery, and save validated definitions under the configuration directory. Invalid definitions are rejected before saving; the editor never executes commands or writes to a source log.
+
+Use `n` or `N` to add a template, `Enter` to edit a field, `t` to test, `s` to save, `d` to delete, and `Esc` to close. Roots accept comma-separated absolute paths or `~/` paths. This makes it possible to add a compatible local harness without changing the binary.
+
 ## Supported Providers
 
 | Provider | Log Location | Format |

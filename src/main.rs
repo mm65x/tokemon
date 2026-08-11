@@ -107,6 +107,10 @@ fn cmd_init() -> anyhow::Result<()> {
 
 fn cmd_source(command: &SourceCommands) -> anyhow::Result<()> {
     match command {
+        SourceCommands::Configure => {
+            tui::run_source_config()?;
+            Ok(())
+        }
         SourceCommands::Validate { definition } => {
             let source = source::custom::CustomSource::from_file(definition)?;
             let files = source.discover_files();
@@ -132,9 +136,9 @@ fn cmd_source(command: &SourceCommands) -> anyhow::Result<()> {
             } else {
                 println!("No matching files found.");
             }
+            Ok(())
         }
     }
-    Ok(())
 }
 
 // --- Shared helpers for command handlers ---

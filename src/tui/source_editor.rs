@@ -247,10 +247,21 @@ impl State {
     }
 
     fn save_current(&mut self) {
+        let previous_path = self.current().path.clone();
         match custom::save_definition(&self.current().definition) {
             Ok(path) => {
                 self.current_mut().path = Some(path.clone());
-                self.status = Some(format!("Saved {}", path.display()));
+                let old_path = previous_path.filter(|old_path| old_path != &path);
+                self.status = match old_path {
+                    Some(old_path) => match custom::remove_definition_file(&old_path) {
+                        Ok(()) => Some(format!("Saved {}", path.display())),
+                        Err(error) => Some(format!(
+                            "Saved {}, but the previous definition remains: {error}",
+                            path.display()
+                        )),
+                    },
+                    None => Some(format!("Saved {}", path.display())),
+                };
             }
             Err(error) => self.status = Some(format!("Cannot save: {error}")),
         }
@@ -258,7 +269,12 @@ impl State {
 
     fn delete_current(&mut self) {
         let name = self.current().definition.name.clone();
-        if let Err(error) = custom::delete_definition(&name) {
+        if let Some(path) = self.current().path.clone() {
+            if let Err(error) = custom::remove_definition_file(&path) {
+                self.status = Some(format!("Cannot delete: {error}"));
+                return;
+            }
+        } else if let Err(error) = custom::delete_definition(&name) {
             self.status = Some(format!("Cannot delete: {error}"));
             return;
         }

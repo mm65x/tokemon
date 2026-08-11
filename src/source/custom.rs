@@ -21,7 +21,7 @@ pub fn definition_dir() -> PathBuf {
 
 /// Return the filename used for a source definition.
 #[must_use]
-pub fn definition_path(name: &str) -> PathBuf {
+fn definition_path(name: &str) -> PathBuf {
     definition_dir().join(format!("{name}.toml"))
 }
 
@@ -49,7 +49,19 @@ pub fn save_definition(definition: &CustomSourceDefinition) -> anyhow::Result<Pa
 
 /// Remove a saved source definition.
 pub fn delete_definition(name: &str) -> anyhow::Result<()> {
-    let path = definition_path(name);
+    anyhow::ensure!(
+        is_safe_name(name),
+        "name must contain only letters, numbers, '.', '_' or '-'"
+    );
+    remove_definition_file(&definition_path(name))
+}
+
+/// Remove a definition file that was previously discovered in the definition directory.
+pub(crate) fn remove_definition_file(path: &Path) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        path.parent() == Some(definition_dir().as_path()),
+        "definition path must be inside the source definition directory"
+    );
     if path.exists() {
         fs::remove_file(path)?;
     }
@@ -460,5 +472,11 @@ mod tests {
             ..CustomSourceDefinition::default()
         };
         assert!(CustomSource::from_definition(unbounded).is_err());
+    }
+
+    #[test]
+    fn rejects_unsafe_definition_deletion_paths() {
+        assert!(delete_definition("../outside").is_err());
+        assert!(remove_definition_file(Path::new("/tmp/outside.toml")).is_err());
     }
 }

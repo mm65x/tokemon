@@ -33,15 +33,51 @@ public enum StatusRunnerError: Error, Equatable, LocalizedError {
 
 private final class DataCollector: @unchecked Sendable {
     private let lock = NSLock()
+    private let limit: Int
     private var value = Data()
 
-    func append(_ data: Data) {
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func collect(from handle: FileHandle) {
+        while true {
+            let data = handle.readData(ofLength: 64 * 1024)
+            guard !data.isEmpty else { return }
+
+            lock.lock()
+            if value.count <= limit {
+                let remaining = limit + 1 - value.count
+                value.append(data.prefix(max(0, remaining)))
+            }
+            lock.unlock()
+        }
+    }
+
+    var isOverLimit: Bool {
         lock.lock()
-        value.append(data)
-        lock.unlock()
+        defer { lock.unlock() }
+        return value.count > limit
     }
 
     func data() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private final class TimeoutState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func markTimedOut() {
+        lock.lock()
+        value = true
+        lock.unlock()
+    }
+
+    var isTimedOut: Bool {
         lock.lock()
         defer { lock.unlock() }
         return value
@@ -60,7 +96,7 @@ public final class StatusRunner {
     ) {
         self.executableURL = executableURL
         self.timeout = timeout
-        self.outputLimit = outputLimit
+        self.outputLimit = max(0, outputLimit)
     }
 
     public func run(arguments: [String]) throws -> StatusCommandResult {
@@ -77,27 +113,27 @@ public final class StatusRunner {
         process.standardOutput = stdout
         process.standardError = stderr
 
-        let stdoutCollector = DataCollector()
-        let stderrCollector = DataCollector()
+        let stdoutCollector = DataCollector(limit: self.outputLimit)
+        let stderrCollector = DataCollector(limit: self.outputLimit)
         let readGroup = DispatchGroup()
 
         readGroup.enter()
         DispatchQueue.global(qos: .utility).async {
-            stdoutCollector.append(stdout.fileHandleForReading.readDataToEndOfFile())
+            stdoutCollector.collect(from: stdout.fileHandleForReading)
             readGroup.leave()
         }
         readGroup.enter()
         DispatchQueue.global(qos: .utility).async {
-            stderrCollector.append(stderr.fileHandleForReading.readDataToEndOfFile())
+            stderrCollector.collect(from: stderr.fileHandleForReading)
             readGroup.leave()
         }
 
-        var timedOut = false
+        let timeoutState = TimeoutState()
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         timer.schedule(deadline: .now() + timeout)
         timer.setEventHandler {
             if process.isRunning {
-                timedOut = true
+                timeoutState.markTimedOut()
                 process.terminate()
             }
         }
@@ -116,10 +152,10 @@ public final class StatusRunner {
 
         let output = stdoutCollector.data()
         let errorOutput = stderrCollector.data()
-        guard output.count <= outputLimit else {
+        guard !stdoutCollector.isOverLimit, !stderrCollector.isOverLimit else {
             throw StatusRunnerError.outputTooLarge
         }
-        if timedOut {
+        if timeoutState.isTimedOut {
             throw StatusRunnerError.timedOut
         }
 

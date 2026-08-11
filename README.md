@@ -71,6 +71,30 @@ cd tokemon
 cargo install --path .
 ```
 
+### macOS menu-bar app (local alpha)
+
+The repository includes an optional macOS 13+ menu-bar client. It runs entirely on
+the local machine and reads the versioned status document from the installed
+`tokemon` executable. The client always requests offline status data, so it does
+not start a daemon, open a network connection, or require provider credentials.
+
+Build and launch it from the repository:
+
+```bash
+swift build --package-path macos -c release
+macos/.build/release/TokemonMenuBar &
+```
+
+The menu shows a headline metric, scope, refresh time, and clear empty/error
+states. Open **Preferences…** to choose the executable path, metric (tokens,
+cost, or combined), scope (today, week, month, or all time), and refresh interval.
+Cost is labelled unavailable when the status response has no pricing table rather
+than presenting an unpriced zero. **Open dashboard** launches the detailed local
+view in a terminal window.
+
+This is an opt-in local alpha while the menu-bar packaging, signing, and
+distribution workflow are developed separately.
+
 ## Quick Start
 
 ```bash

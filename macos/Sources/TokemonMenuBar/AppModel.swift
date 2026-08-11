@@ -136,6 +136,12 @@ public final class AppModel: ObservableObject {
         return Self.formatDate(lastRefresh)
     }
 
+    public var providerLabel: String {
+        guard let report else { return "No providers" }
+        let count = report.providers.count
+        return "\(count) provider\(count == 1 ? "" : "s")"
+    }
+
     public func resolvedExecutableURL() -> URL? {
         Self.resolveExecutable(path: preferences.executablePath)
     }
@@ -151,10 +157,19 @@ public final class AppModel: ObservableObject {
     ) -> URL? {
         let expandedPath = path.replacingOccurrences(of: "~", with: NSHomeDirectory(), options: [.anchored])
         if expandedPath.contains("/") {
-            return isExecutable(expandedPath, fileManager: fileManager)
+            if let url = isExecutable(expandedPath, fileManager: fileManager) {
+                return url
+            }
         }
 
-        let executableName = expandedPath.isEmpty ? "tokemon" : expandedPath
+        let executableName: String
+        if expandedPath.isEmpty {
+            executableName = "tokemon"
+        } else if expandedPath.contains("/") {
+            executableName = URL(fileURLWithPath: expandedPath).lastPathComponent
+        } else {
+            executableName = expandedPath
+        }
         let searchPath = environment["PATH"] ?? "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
         for directory in searchPath.split(separator: ":") {
             let candidate = URL(fileURLWithPath: String(directory)).appendingPathComponent(executableName)
@@ -195,7 +210,7 @@ public final class AppModel: ObservableObject {
             } else if let executableURL = resolveExecutable(path: preferences.executablePath) {
                 runner = StatusRunner(executableURL: executableURL)
             } else {
-                return .failure("Set the tokemon executable path in Preferences.")
+                return .failure(executableError(path: preferences.executablePath))
             }
 
             let result = try runner.runOffline(arguments: StatusQuery(scope: preferences.scope).arguments(now: now))
@@ -208,6 +223,18 @@ public final class AppModel: ObservableObject {
     nonisolated private static func isExecutable(_ path: String, fileManager: FileManager) -> URL? {
         guard !path.isEmpty, fileManager.isExecutableFile(atPath: path) else { return nil }
         return URL(fileURLWithPath: path)
+    }
+
+    nonisolated private static func executableError(path: String) -> String {
+        let expandedPath = path.replacingOccurrences(of: "~", with: NSHomeDirectory(), options: [.anchored])
+        guard !expandedPath.isEmpty else {
+            return "Could not find tokemon on PATH. Set its executable path in Preferences."
+        }
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: expandedPath) {
+            return "The configured tokemon executable was not found. Update its path in Preferences."
+        }
+        return "The configured tokemon path is not executable. Update its path in Preferences."
     }
 
     private static func formatTokens(_ tokens: UInt64) -> String {

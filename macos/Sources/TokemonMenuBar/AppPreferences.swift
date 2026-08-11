@@ -42,10 +42,10 @@ public struct AppPreferences: Equatable, Sendable {
     }
 
     private enum Keys {
-        static let executablePath = "executablePath"
-        static let metric = "metric"
-        static let scope = "scope"
-        static let refreshInterval = "refreshInterval"
+        static let executablePath = "tokemonMenuBar.executablePath"
+        static let metric = "tokemonMenuBar.metric"
+        static let scope = "tokemonMenuBar.scope"
+        static let refreshInterval = "tokemonMenuBar.refreshInterval"
     }
 }
 

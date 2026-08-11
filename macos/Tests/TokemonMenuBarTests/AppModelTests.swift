@@ -22,6 +22,16 @@ final class AppModelTests: XCTestCase {
             runner.arguments,
             ["--frequency", "weekly", "--since", "2026-08-10", "--until", "2026-08-12"]
         )
+
+        runner.fail(with: "temporary status failure")
+        try await Task.sleep(nanoseconds: 20_000_000)
+        model.refresh()
+        try await waitUntil {
+            if case .failed = model.state { return true }
+            return false
+        }
+        XCTAssertEqual(model.report, report)
+        XCTAssertEqual(model.statusMessage, "temporary status failure")
     }
 
     func testCostMetricExplainsWhenPricingIsUnavailable() async throws {
@@ -64,7 +74,25 @@ final class AppModelTests: XCTestCase {
             return false
         }
 
-        XCTAssertEqual(model.statusMessage, "Set the tokemon executable path in Preferences.")
+        XCTAssertEqual(
+            model.statusMessage,
+            "The configured tokemon executable was not found. Update its path in Preferences."
+        )
+    }
+
+    func testNonExecutablePathGetsADistinctError() async throws {
+        let model = AppModel(preferences: AppPreferences(executablePath: "/etc/hosts"))
+
+        model.refresh()
+        try await waitUntil {
+            if case .failed = model.state { return true }
+            return false
+        }
+
+        XCTAssertEqual(
+            model.statusMessage,
+            "The configured tokemon path is not executable. Update its path in Preferences."
+        )
     }
 
     private func waitUntil(
@@ -105,6 +133,7 @@ private final class RecordingRunner: StatusRunning, @unchecked Sendable {
     private let lock = NSLock()
     private let result: StatusCommandResult
     private var recordedArguments: [String] = []
+    private var failureMessage: String?
 
     init(result: StatusCommandResult) {
         self.result = result
@@ -116,10 +145,20 @@ private final class RecordingRunner: StatusRunning, @unchecked Sendable {
         return recordedArguments
     }
 
+    func fail(with message: String) {
+        lock.lock()
+        failureMessage = message
+        lock.unlock()
+    }
+
     func runOffline(arguments: [String]) throws -> StatusCommandResult {
         lock.lock()
         recordedArguments = arguments
+        let failure = failureMessage
         lock.unlock()
+        if let failure {
+            throw NSError(domain: "StatusRunnerTests", code: 1, userInfo: [NSLocalizedDescriptionKey: failure])
+        }
         return result
     }
 }

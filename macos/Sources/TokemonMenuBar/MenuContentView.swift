@@ -12,7 +12,7 @@ struct MenuContentView: View {
                     Text(model.metricValue)
                         .font(.headline)
                         .monospacedDigit()
-                    Text("\(model.preferences.scope.label) · \(model.updatedLabel)")
+                    Text("\(model.preferences.scope.label) · \(model.providerLabel) · \(model.updatedLabel)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -33,6 +33,12 @@ struct MenuContentView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if case .failed = model.state, model.report != nil {
+                Label("Showing the last successful result", systemImage: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Divider()

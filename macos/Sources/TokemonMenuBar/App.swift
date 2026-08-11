@@ -12,12 +12,12 @@ struct TokemonMenuBarApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuContentView(model: model)
-                .task {
-                    model.start()
-                }
         } label: {
             Text(model.menuBarTitle)
                 .monospacedDigit()
+                .onAppear {
+                    model.start()
+                }
         }
         .menuBarExtraStyle(.window)
     }

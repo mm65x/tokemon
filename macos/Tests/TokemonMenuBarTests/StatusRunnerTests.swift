@@ -20,6 +20,16 @@ final class StatusRunnerTests: XCTestCase {
         }
     }
 
+    func testReportsLaunchFailureForAnUnknownExecutable() {
+        let runner = StatusRunner(executableURL: URL(fileURLWithPath: "/does/not/exist"))
+
+        XCTAssertThrowsError(try runner.run(arguments: [])) { error in
+            guard case .launchFailed = error as? StatusRunnerError else {
+                return XCTFail("Expected a launch failure, got \(error)")
+            }
+        }
+    }
+
     func testBoundsCollectedOutput() {
         let runner = StatusRunner(
             executableURL: URL(fileURLWithPath: "/usr/bin/printf"),

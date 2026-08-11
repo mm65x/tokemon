@@ -117,6 +117,12 @@ public final class StatusRunner: @unchecked Sendable {
         process.standardOutput = stdout
         process.standardError = stderr
 
+        do {
+            try process.run()
+        } catch {
+            throw StatusRunnerError.launchFailed(error.localizedDescription)
+        }
+
         let stdoutCollector = DataCollector(limit: self.outputLimit)
         let stderrCollector = DataCollector(limit: self.outputLimit)
         let readGroup = DispatchGroup()
@@ -133,6 +139,7 @@ public final class StatusRunner: @unchecked Sendable {
         }
 
         let timeoutState = TimeoutState()
+
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         timer.schedule(deadline: .now() + timeout)
         timer.setEventHandler {
@@ -142,13 +149,6 @@ public final class StatusRunner: @unchecked Sendable {
             }
         }
         timer.resume()
-
-        do {
-            try process.run()
-        } catch {
-            timer.cancel()
-            throw StatusRunnerError.launchFailed(error.localizedDescription)
-        }
 
         process.waitUntilExit()
         timer.cancel()

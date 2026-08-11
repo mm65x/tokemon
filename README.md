@@ -25,6 +25,7 @@ Unified token usage tracking across all your AI coding tools. `tokemon top` prov
 - **SQLite cache** — parsed data is cached for instant repeated runs and survives log rotation
 - **Budget pacemaker** — set daily/weekly/monthly spending limits with progress tracking
 - **Statusline mode** — compact one-line output for shell prompts and status bars (`tokemon statusline`)
+- **Versioned status JSON** — stable machine-readable summaries for lightweight clients (`tokemon status --json`)
 - **Session breakdown** — per-session cost analysis across all providers (`tokemon sessions`)
 - **MCP server** — expose usage data to AI tools via Model Context Protocol (`tokemon mcp`)
 - **Two display modes** — compact one-row-per-day (default) or detailed per-model breakdown with responsive API Provider and Client columns
@@ -111,6 +112,7 @@ tokemon [OPTIONS] <COMMAND>
 Commands:
   top          Live monitoring dashboard
   report       Generate a static usage report (table, json, or csv)
+  status       Emit a versioned machine-readable status document
   statusline   Compact one-line output for shell prompts and status bars
   budget       Show spending vs configured limits
   sessions     Show per-session cost breakdown
@@ -169,6 +171,23 @@ cost = true
 
 CLI flags always override config values.
 
+### Local pricing overrides
+
+Create `~/.config/tokemon/pricing_override.json` to replace downloaded prices or add custom models:
+
+```json
+{
+  "custom-model": {
+    "input_cost_per_token": 0.000001,
+    "output_cost_per_token": 0.000004,
+    "cache_read_cost": 0.0000001,
+    "cache_creation_cost": 0.00000125
+  }
+}
+```
+
+Prices are in USD per token. Entries are merged by exact model key after the base pricing data is loaded. Supplied fields replace base values, while omitted fields keep their base values. The file is optional and changes take effect the next time `tokemon` starts.
+
 ## Supported Providers
 
 | Provider | Log Location | Format |
@@ -181,7 +200,7 @@ CLI flags always override config values.
 | Cline | VSCode globalStorage | JSON |
 | Roo Code | VSCode globalStorage | JSON |
 | Kilo Code | VSCode globalStorage | JSON |
-| Copilot | VSCode workspaceStorage | JSON (stub) |
+| Copilot | VSCode globalStorage telemetry directories | JSONL |
 | Cursor | `~/.config/tokscale/cursor-cache/usage*.csv` | CSV |
 | Qwen Code | `~/.qwen/tmp/{project}/session.json` | JSON |
 | Pi Agent | `~/.pi/agent/sessions/{project}/*.jsonl` | JSONL |

@@ -12,6 +12,7 @@ use crate::types::Record;
 const PRICING_URL: &str =
     "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const CACHE_TTL_SECS: u64 = 3600; // 1 hour
+const PRICING_OVERRIDE_FILENAME: &str = "pricing_override.json";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ModelPricing {
@@ -29,6 +30,15 @@ pub struct PricingEngine {
 
 impl PricingEngine {
     pub fn load(offline: bool) -> Result<Self> {
+        let mut engine = Self::load_base(offline)?;
+        let override_path = Self::override_path();
+        if let Err(e) = engine.apply_overrides_from_path(&override_path) {
+            eprintln!("[tokemon] Warning: {e}; using base prices");
+        }
+        Ok(engine)
+    }
+
+    fn load_base(offline: bool) -> Result<Self> {
         let cache_path = Self::cache_path();
 
         // Check if cache is fresh
@@ -41,9 +51,12 @@ impl PricingEngine {
                 if let Ok(engine) = Self::parse_pricing(&data) {
                     return Ok(engine);
                 }
-                eprintln!("[tokemon] Warning: cached pricing data corrupt; costs will be $0.00");
+                eprintln!("[tokemon] Warning: cached pricing data corrupt; no base prices loaded");
             }
-            eprintln!("[tokemon] Warning: no cached pricing data and --offline specified; costs will be $0.00");
+            eprintln!(
+                "[tokemon] Warning: no cached pricing data and --offline specified; \
+                 no base prices loaded"
+            );
             return Ok(Self {
                 models: HashMap::new(),
             });
@@ -71,7 +84,10 @@ impl PricingEngine {
                                 return Ok(engine);
                             }
                         }
-                        eprintln!("[tokemon] Warning: failed to parse remote pricing: {e}; costs will be $0.00");
+                        eprintln!(
+                            "[tokemon] Warning: failed to parse remote pricing: {e}; \
+                             no base prices loaded"
+                        );
                         Ok(Self {
                             models: HashMap::new(),
                         })
@@ -88,7 +104,7 @@ impl PricingEngine {
                         return Ok(engine);
                     }
                 }
-                eprintln!("[tokemon] Warning: failed to fetch pricing: {e}; costs will be $0.00");
+                eprintln!("[tokemon] Warning: failed to fetch pricing: {e}; no base prices loaded");
                 Ok(Self {
                     models: HashMap::new(),
                 })
@@ -192,6 +208,43 @@ impl PricingEngine {
         paths::cache_dir().join("pricing.json")
     }
 
+    fn override_path() -> PathBuf {
+        paths::config_dir().join(PRICING_OVERRIDE_FILENAME)
+    }
+
+    fn apply_overrides_from_path(&mut self, path: &Path) -> Result<()> {
+        let data = match fs::read_to_string(path) {
+            Ok(data) => data,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => {
+                return Err(TokemonError::Pricing(format!(
+                    "failed to read pricing overrides from {}: {e}",
+                    path.display()
+                )));
+            }
+        };
+
+        let overrides: HashMap<String, ModelPricing> =
+            serde_json::from_str(&data).map_err(|e| {
+                TokemonError::Pricing(format!(
+                    "failed to parse pricing overrides from {}: {e}",
+                    path.display()
+                ))
+            })?;
+        self.merge_overrides(overrides);
+        Ok(())
+    }
+
+    fn merge_overrides(&mut self, overrides: HashMap<String, ModelPricing>) {
+        for (model, override_pricing) in overrides {
+            if let Some(base_pricing) = self.models.get_mut(&model) {
+                base_pricing.merge(&override_pricing);
+            } else {
+                self.models.insert(model, override_pricing);
+            }
+        }
+    }
+
     fn read_cache(path: &Path) -> Option<String> {
         fs::metadata(path)
             .ok()?
@@ -227,6 +280,23 @@ impl PricingEngine {
         let models: HashMap<String, ModelPricing> = serde_json::from_str(data)
             .map_err(|e| TokemonError::Pricing(format!("failed to parse pricing JSON: {e}")))?;
         Ok(Self { models })
+    }
+}
+
+impl ModelPricing {
+    fn merge(&mut self, overrides: &Self) {
+        if overrides.input_cost_per_token.is_some() {
+            self.input_cost_per_token = overrides.input_cost_per_token;
+        }
+        if overrides.output_cost_per_token.is_some() {
+            self.output_cost_per_token = overrides.output_cost_per_token;
+        }
+        if overrides.cache_read_cost.is_some() {
+            self.cache_read_cost = overrides.cache_read_cost;
+        }
+        if overrides.cache_creation_cost.is_some() {
+            self.cache_creation_cost = overrides.cache_creation_cost;
+        }
     }
 }
 
@@ -322,6 +392,7 @@ fn provider_rank(route: Option<&str>, model: &str, candidate_route: Option<&str>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     const DUMMY_JSON: &str = r#"{
         "model-a": {
@@ -339,6 +410,23 @@ mod tests {
             "output_cost_per_token": 0.0006
         }
     }"#;
+
+    fn temporary_override_path(test_name: &str) -> PathBuf {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "tokemon-pricing-override-{test_name}-{}-{id}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir.join(PRICING_OVERRIDE_FILENAME)
+    }
+
+    fn remove_temporary_override(path: &Path) {
+        if let Some(parent) = path.parent() {
+            let _ = fs::remove_dir_all(parent);
+        }
+    }
 
     const ROUTED_PRICING_JSON: &str = r#"{
         "claude-opus-5": {
@@ -543,6 +631,99 @@ mod tests {
                 .expect("provider fallback should resolve");
             assert_eq!(routed.input_cost_per_token, Some(0.000007));
         }
+    }
+
+    #[test]
+    fn test_missing_pricing_override_is_no_op() {
+        let path = temporary_override_path("missing");
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        engine.apply_overrides_from_path(&path).unwrap();
+
+        assert_eq!(engine.models.len(), 3);
+        assert_eq!(engine.models["model-a"].input_cost_per_token, Some(0.001));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_pricing_override_merges_existing_model_fields() {
+        let path = temporary_override_path("existing");
+        fs::write(
+            &path,
+            r#"{
+                "model-a": {
+                    "input_cost_per_token": 0.009,
+                    "cache_read_cost": 0.0009
+                }
+            }"#,
+        )
+        .unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        engine.apply_overrides_from_path(&path).unwrap();
+
+        let pricing = &engine.models["model-a"];
+        assert_eq!(pricing.input_cost_per_token, Some(0.009));
+        assert_eq!(pricing.output_cost_per_token, Some(0.002));
+        assert_eq!(pricing.cache_read_cost, Some(0.0009));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_pricing_override_adds_custom_model() {
+        let path = temporary_override_path("custom");
+        fs::write(
+            &path,
+            r#"{
+                "custom-model": {
+                    "input_cost_per_token": 0.004,
+                    "output_cost_per_token": 0.008,
+                    "cache_creation_input_token_cost": 0.005
+                }
+            }"#,
+        )
+        .unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        engine.apply_overrides_from_path(&path).unwrap();
+
+        let pricing = engine
+            .find_pricing("custom-model")
+            .expect("custom model should be added");
+        assert_eq!(pricing.input_cost_per_token, Some(0.004));
+        assert_eq!(pricing.output_cost_per_token, Some(0.008));
+        assert_eq!(pricing.cache_creation_cost, Some(0.005));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_malformed_pricing_override_keeps_base_prices() {
+        let path = temporary_override_path("malformed");
+        fs::write(&path, r#"{"model-a": {"input_cost_per_token": "bad"}}"#).unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        let error = engine.apply_overrides_from_path(&path).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to parse pricing overrides"));
+        assert_eq!(engine.models["model-a"].input_cost_per_token, Some(0.001));
+        remove_temporary_override(&path);
+    }
+
+    #[test]
+    fn test_unreadable_pricing_override_keeps_base_prices() {
+        let path = temporary_override_path("unreadable");
+        fs::create_dir(&path).unwrap();
+        let mut engine = PricingEngine::parse_pricing(DUMMY_JSON).unwrap();
+
+        let error = engine.apply_overrides_from_path(&path).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to read pricing overrides"));
+        assert_eq!(engine.models["model-a"].input_cost_per_token, Some(0.001));
+        remove_temporary_override(&path);
     }
 
     #[test]

@@ -196,6 +196,37 @@ pub struct Report {
     pub total_tokens: u64,
 }
 
+/// Stable machine-readable status document for lightweight clients.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusReport {
+    pub schema_version: u32,
+    pub generated_at: DateTime<Utc>,
+    pub state: String,
+    pub scope: StatusScope,
+    pub providers: Vec<String>,
+    pub summaries: Vec<PeriodSummary>,
+    pub total_cost: f64,
+    pub total_tokens: u64,
+    pub total_requests: u64,
+    pub capabilities: StatusCapabilities,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusScope {
+    pub frequency: String,
+    pub since: Option<NaiveDate>,
+    pub until: Option<NaiveDate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusCapabilities {
+    pub cost: bool,
+    pub date_filters: bool,
+    pub provider_filters: bool,
+    pub periodic_summaries: bool,
+    pub session_view: bool,
+}
+
 /// Summary for a single coding session
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSummary {
@@ -385,5 +416,43 @@ mod tests {
         assert_eq!(GroupBy::Model.label(), "model");
         assert_eq!(GroupBy::ModelClient.label(), "model+client");
         assert_eq!(GroupBy::Client.label(), "client");
+    }
+
+    #[test]
+    fn status_report_serializes_versioned_empty_state() {
+        let generated_at = Utc::now();
+        let status = StatusReport {
+            schema_version: 1,
+            generated_at,
+            state: "empty".to_string(),
+            scope: StatusScope {
+                frequency: "daily".to_string(),
+                since: None,
+                until: None,
+            },
+            providers: Vec::new(),
+            summaries: Vec::new(),
+            total_cost: 0.0,
+            total_tokens: 0,
+            total_requests: 0,
+            capabilities: StatusCapabilities {
+                cost: true,
+                date_filters: true,
+                provider_filters: true,
+                periodic_summaries: true,
+                session_view: true,
+            },
+        };
+
+        let value = serde_json::to_value(&status).expect("status should serialize");
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["state"], "empty");
+        assert_eq!(value["scope"]["frequency"], "daily");
+        assert_eq!(value["providers"], serde_json::json!([]));
+        assert_eq!(value["total_tokens"], 0);
+        assert_eq!(value["total_requests"], 0);
+        assert!(value["capabilities"]["periodic_summaries"]
+            .as_bool()
+            .unwrap_or(false));
     }
 }

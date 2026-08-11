@@ -33,11 +33,11 @@ mod tui;
 mod types;
 
 use cache::Cache;
-use cli::{Cli, Commands, Frequency};
+use cli::{Cli, Commands, Frequency, SourceCommands};
 use config::Config;
 use pipeline::load_and_price;
-use source::SourceSet;
-use types::{Report, SessionReport};
+use source::{Source, SourceSet};
+use types::{Report, SessionReport, StatusCapabilities, StatusReport, StatusScope};
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -45,11 +45,14 @@ fn main() -> anyhow::Result<()> {
 
     match &cli.command {
         Commands::Report => cmd_report(&cli, &config),
+        Commands::Status => cmd_status(&cli, &config),
         Commands::Discover => {
             cmd_discover();
             Ok(())
         }
         Commands::Init => cmd_init(),
+        Commands::Source { command } => cmd_source(command),
+        Commands::Config => tui::run_config(&config, cli.offline || config.offline),
         Commands::Statusline => cmd_statusline(&cli, &config),
         Commands::Budget => cmd_budget(&cli, &config),
         Commands::Sessions { top } => cmd_sessions(&cli, &config, *top),
@@ -99,6 +102,38 @@ fn cmd_init() -> anyhow::Result<()> {
     let path = Config::write_default()?;
     println!("Config written to: {}", path.display());
     println!("Edit this file to customize default behavior.");
+    Ok(())
+}
+
+fn cmd_source(command: &SourceCommands) -> anyhow::Result<()> {
+    match command {
+        SourceCommands::Validate { definition } => {
+            let source = source::custom::CustomSource::from_file(definition)?;
+            let files = source.discover_files();
+            println!("Valid custom source: {}", source.display_name());
+            println!("Schema version: {}", source.definition().schema_version);
+            println!("Discovered files: {}", files.len());
+            if let Some(sample) = files.first() {
+                let records = source.parse_file(sample)?;
+                println!("Preview file: {}", sample.display());
+                println!("Parsed records: {}", records.len());
+                for record in records.iter().take(5) {
+                    println!(
+                        "  {} | model={} | input={} | output={} | cache_read={} | cache_write={} | thinking={}",
+                        record.timestamp.to_rfc3339(),
+                        record.model.as_deref().unwrap_or("unknown"),
+                        record.input_tokens,
+                        record.output_tokens,
+                        record.cache_read_tokens,
+                        record.cache_creation_tokens,
+                        record.thinking_tokens,
+                    );
+                }
+            } else {
+                println!("No matching files found.");
+            }
+        }
+    }
     Ok(())
 }
 
@@ -208,6 +243,61 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         render::print_table(&report, breakdown, &config.columns);
     }
 
+    Ok(())
+}
+
+fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
+    let freq = cli.frequency;
+    let entries = load_and_price(
+        &pipeline::PipelineOptions::from_cli_config(cli, config),
+        false,
+    )?;
+
+    let mut summaries = match freq {
+        Frequency::Weekly => rollup::aggregate_weekly(&entries),
+        Frequency::Monthly => rollup::aggregate_monthly(&entries),
+        Frequency::Daily => rollup::aggregate_daily(&entries),
+    };
+    summaries.sort_unstable_by_key(|summary| summary.date);
+
+    let providers: Vec<String> = entries
+        .iter()
+        .map(|entry| entry.provider.to_string())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let total_cost = summaries.iter().map(|summary| summary.total_cost).sum();
+    let total_tokens = entries.iter().map(types::Record::total_tokens).sum();
+    let total_requests = summaries.iter().map(|summary| summary.total_requests).sum();
+
+    let status = StatusReport {
+        schema_version: 1,
+        generated_at: Utc::now(),
+        state: if entries.is_empty() {
+            "empty".to_string()
+        } else {
+            "populated".to_string()
+        },
+        scope: StatusScope {
+            frequency: frequency_label(freq).to_string(),
+            since: cli.since,
+            until: cli.until,
+        },
+        providers,
+        summaries,
+        total_cost,
+        total_tokens,
+        total_requests,
+        capabilities: StatusCapabilities {
+            cost: !cli.no_cost && !config.no_cost,
+            date_filters: true,
+            provider_filters: true,
+            periodic_summaries: true,
+            session_view: true,
+        },
+    };
+
+    render::print_status_json(&status);
     Ok(())
 }
 
@@ -354,5 +444,13 @@ fn format_provider_count(count: usize) -> String {
         "1 provider".to_string()
     } else {
         format!("{count} providers")
+    }
+}
+
+fn frequency_label(freq: Frequency) -> &'static str {
+    match freq {
+        Frequency::Daily => "daily",
+        Frequency::Weekly => "weekly",
+        Frequency::Monthly => "monthly",
     }
 }

@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::ErrorKind;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -303,22 +304,59 @@ impl Config {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let content = toml::to_string_pretty(self)?;
+        let mut document = match fs::read_to_string(&path) {
+            Ok(existing) => toml::from_str::<toml::Value>(&existing)
+                .unwrap_or_else(|_| toml::Value::Table(toml::map::Map::new())),
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                toml::Value::Table(toml::map::Map::new())
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let updated = toml::Value::try_from(self)?;
+        merge_toml_tables(&mut document, updated);
+        let content = toml::to_string_pretty(&document)?;
         let header = "# Tokemon configuration\n\
                       # Location: ~/.config/tokemon/config.toml\n\
                       #\n\
                       # Changes here affect default behavior.\n\
                       # CLI flags always override config values.\n\n";
-        fs::write(&path, format!("{header}{content}"))?;
+        let temporary_path = path.with_extension(format!("toml.{}.tmp", std::process::id()));
+        fs::write(&temporary_path, format!("{header}{content}"))?;
+        match fs::rename(&temporary_path, &path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
+                fs::remove_file(&path)?;
+                fs::rename(&temporary_path, &path)?;
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&temporary_path);
+                return Err(error.into());
+            }
+        }
         Ok(())
     }
 
     pub fn config_path() -> PathBuf {
-        let config_dir = directories::ProjectDirs::from("", "", "tokemon").map_or_else(
-            || paths::home_dir().join(".config/tokemon"),
-            |d| d.config_dir().to_path_buf(),
-        );
-        config_dir.join(CONFIG_FILENAME)
+        paths::config_dir().join(CONFIG_FILENAME)
+    }
+}
+
+fn merge_toml_tables(existing: &mut toml::Value, updated: toml::Value) {
+    match updated {
+        toml::Value::Table(updated_table) => {
+            if let toml::Value::Table(existing_table) = existing {
+                for (key, value) in updated_table {
+                    if let Some(existing_value) = existing_table.get_mut(&key) {
+                        merge_toml_tables(existing_value, value);
+                    } else {
+                        existing_table.insert(key, value);
+                    }
+                }
+            } else {
+                *existing = toml::Value::Table(updated_table);
+            }
+        }
+        updated => *existing = updated,
     }
 }
 
@@ -421,5 +459,32 @@ mod tests {
         assert_eq!(validated.week_bucket_hours, 4);
         assert_eq!(validated.month_bucket_days, 1);
         assert_eq!(validated.tick_interval, 300); // Clamped to 300
+    }
+
+    #[test]
+    fn merging_saved_values_preserves_unknown_keys() {
+        let mut existing: toml::Value = toml::from_str(
+            r#"
+            custom_option = "keep"
+            [columns]
+            custom_column = true
+            cost = false
+            "#,
+        )
+        .expect("valid TOML");
+        let updated: toml::Value = toml::from_str(
+            r#"
+            [columns]
+            cost = true
+            "#,
+        )
+        .expect("valid TOML");
+
+        merge_toml_tables(&mut existing, updated);
+
+        let table = existing.as_table().expect("root table");
+        assert_eq!(table["custom_option"].as_str(), Some("keep"));
+        assert_eq!(table["columns"]["custom_column"].as_bool(), Some(true));
+        assert_eq!(table["columns"]["cost"].as_bool(), Some(true));
     }
 }

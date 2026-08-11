@@ -3,7 +3,8 @@ use std::time::{Duration as StdDuration, Instant};
 
 use crate::timestamp;
 use chrono::{Duration, NaiveDate, Utc};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent};
+use ratatui::layout::Rect;
 
 use crate::config::Config;
 use crate::render::{self, format_tokens_short};
@@ -13,12 +14,19 @@ use crate::{cache, cost, dedup, rollup};
 
 use super::diff::{self, RowKey};
 use super::event::Event;
+use super::views::dashboard::{self, MouseAction};
+use super::views::settings::{self, MouseAction as SettingsMouseAction};
+use super::widgets::heatmap::{self, HeatmapDay};
+use super::widgets::spike_chart::{self, SpikeSeries};
 
 /// Duration (in seconds) for the per-cell highlight fade animation.
 const HIGHLIGHT_DURATION_SECS: f64 = 1.5;
 
 /// Duration (in seconds) for warnings to remain visible in the status bar.
 const WARNING_DISPLAY_SECS: f64 = 5.0;
+
+/// Number of rows moved by one mouse-wheel event.
+const MOUSE_SCROLL_ROWS: u16 = 3;
 
 /// Maximum time the interactive UI waits for a cache write lock.
 ///
@@ -27,6 +35,14 @@ const WARNING_DISPLAY_SECS: f64 = 5.0;
 const TUI_CACHE_BUSY_TIMEOUT: StdDuration = StdDuration::from_millis(100);
 
 // ── View scope ────────────────────────────────────────────────────────────
+
+/// Optional fullscreen visualization replacing the normal dashboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FullscreenView {
+    None,
+    Heatmap,
+    SpikeChart,
+}
 
 /// Which time window the detail table shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +54,8 @@ pub enum Scope {
 }
 
 impl Scope {
+    pub const ALL: [Self; 4] = [Self::Today, Self::Week, Self::Month, Self::AllTime];
+
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -58,11 +76,66 @@ impl Scope {
             Self::AllTime => NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         }
     }
+
+    #[must_use]
+    pub(crate) const fn card_index(self) -> usize {
+        match self {
+            Self::Today => 0,
+            Self::Week => 1,
+            Self::Month => 2,
+            Self::AllTime => 3,
+        }
+    }
+
+    #[must_use]
+    const fn from_card_toggle_key(key: char) -> Option<Self> {
+        match key {
+            'T' => Some(Self::Today),
+            'W' => Some(Self::Week),
+            'M' => Some(Self::Month),
+            'A' => Some(Self::AllTime),
+            _ => None,
+        }
+    }
 }
 
 // ── Summary card data ─────────────────────────────────────────────────────
 
-/// Data for one summary card (Today / This Week / This Month).
+/// Session-only visibility state for the four summary cards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SummaryCardVisibility {
+    visible: [bool; 4],
+}
+
+impl Default for SummaryCardVisibility {
+    fn default() -> Self {
+        Self { visible: [true; 4] }
+    }
+}
+
+impl SummaryCardVisibility {
+    pub const fn toggle(&mut self, scope: Scope) {
+        let index = scope.card_index();
+        self.visible[index] = !self.visible[index];
+    }
+
+    #[must_use]
+    pub const fn is_visible(self, scope: Scope) -> bool {
+        self.visible[scope.card_index()]
+    }
+
+    #[must_use]
+    pub fn any_visible(self) -> bool {
+        self.visible.iter().any(|visible| *visible)
+    }
+
+    #[must_use]
+    pub fn visible_count(self) -> usize {
+        self.visible.iter().filter(|visible| **visible).count()
+    }
+}
+
+/// Data for one summary card (Today / This Week / This Month / All Time).
 #[derive(Debug, Clone)]
 pub struct CardData {
     pub label: &'static str,
@@ -71,6 +144,13 @@ pub struct CardData {
     pub sparkline: Vec<u64>,
     /// Trend indicator: positive = increasing, negative = decreasing, zero = flat.
     pub trend: i8,
+}
+
+/// Interactive region currently under the pointer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum HoverTarget {
+    Card(Scope),
+    TableRow(RowKey),
 }
 
 impl CardData {
@@ -153,6 +233,8 @@ pub struct App {
     pub show_history: bool,
     /// Summary cards: Today, This Week, This Month, All Time.
     pub cards: [CardData; 4],
+    /// Which summary cards are visible for this TUI session.
+    pub card_visibility: SummaryCardVisibility,
     /// Detail table rows for the selected scope.
     pub detail_models: Vec<ModelUsage>,
     /// Detail totals.
@@ -179,12 +261,22 @@ pub struct App {
     /// it was last updated. Used for the green fade animation on
     /// individual table cells.
     pub highlight_map: HashMap<RowKey, Instant>,
+    /// Interactive region currently under the pointer, if any.
+    pub(crate) hovered: Option<HoverTarget>,
     /// Last warning message from the background watcher or data loading,
     /// with the instant it was received. Displayed in the status bar
     /// for a few seconds then cleared.
     pub last_warning: Option<(String, Instant)>,
+    /// Optional fullscreen visualization.
+    pub fullscreen: FullscreenView,
+    /// Daily contribution data loaded on demand.
+    pub heatmap_data: Vec<HeatmapDay>,
+    /// Today's token activity loaded on demand.
+    pub spike_data: Option<SpikeSeries>,
     /// Whether the settings overlay is shown.
     pub show_settings: bool,
+    /// Whether this session should exit when the settings overlay closes.
+    pub(crate) config_only: bool,
     /// Settings editor state.
     pub settings_state: SettingsState,
     /// Whether the UI state has changed and needs a redraw.
@@ -260,6 +352,7 @@ impl App {
                     trend: 0,
                 },
             ],
+            card_visibility: SummaryCardVisibility::default(),
             detail_models: Vec::new(),
             detail_total_cost: 0.0,
             detail_total_tokens: 0,
@@ -273,8 +366,13 @@ impl App {
             applied_filter: String::new(),
             sort_order: SortOrder::CostDesc,
             highlight_map: HashMap::new(),
+            hovered: None,
             last_warning: None,
+            fullscreen: FullscreenView::None,
+            heatmap_data: Vec::new(),
+            spike_data: None,
             show_settings: false,
+            config_only: false,
             settings_state: SettingsState::new(config),
             dirty: true,
             config: config.clone(),
@@ -313,10 +411,15 @@ impl App {
     }
 
     /// Handle an incoming event. Returns `true` if the UI needs a redraw.
-    pub fn handle_event(&mut self, event: &Event) -> bool {
+    pub fn handle_event(&mut self, event: &Event, terminal_area: Rect) -> bool {
         match event {
             Event::Key(key) => {
                 let changed = self.handle_key(*key);
+                self.dirty |= changed;
+                changed
+            }
+            Event::Mouse(mouse) => {
+                let changed = self.handle_mouse(*mouse, terminal_area);
                 self.dirty |= changed;
                 changed
             }
@@ -329,7 +432,11 @@ impl App {
                 if let Err(e) = self.poll_sources() {
                     self.set_warning(format!("Data refresh failed: {e}"));
                 }
-                self.dirty |= self.reload_from_cache();
+                let data_changed = self.reload_from_cache();
+                if data_changed {
+                    self.refresh_active_visual();
+                }
+                self.dirty |= data_changed;
                 // Expire old warnings
                 if let Some((_, t)) = &self.last_warning {
                     if t.elapsed().as_secs_f64() >= WARNING_DISPLAY_SECS {
@@ -349,6 +456,7 @@ impl App {
             Event::DataChanged => {
                 // The watcher already wrote to the cache — just re-read it.
                 self.dirty |= self.reload_from_cache();
+                self.refresh_active_visual();
                 self.dirty
             }
             Event::Warning(msg) => {
@@ -362,6 +470,92 @@ impl App {
             }
             Event::Render => false,
         }
+    }
+
+    fn handle_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
+        if self.show_settings {
+            return self.handle_settings_mouse(mouse, terminal_area);
+        }
+        if self.show_help || self.filter_active {
+            return self.set_hover(None);
+        }
+
+        let hover_changed = self.set_hover(dashboard::hover_target(terminal_area, self, mouse));
+        let action_changed =
+            match dashboard::mouse_action(terminal_area, self.card_visibility, mouse) {
+                Some(MouseAction::SelectScope(scope)) => self.select_scope(scope),
+                Some(MouseAction::ScrollUp) => self.scroll_up(MOUSE_SCROLL_ROWS),
+                Some(MouseAction::ScrollDown) => self.scroll_down(MOUSE_SCROLL_ROWS),
+                None => false,
+            };
+        hover_changed || action_changed
+    }
+
+    fn handle_settings_mouse(&mut self, mouse: MouseEvent, terminal_area: Rect) -> bool {
+        // Keep an in-progress text edit isolated until Enter applies it or
+        // Escape cancels it, matching the keyboard editing behavior.
+        if self.settings_state.editing {
+            return false;
+        }
+
+        match settings::mouse_action(terminal_area, self, mouse) {
+            Some(SettingsMouseAction::SelectField(field)) => {
+                if self.settings_state.selected == field {
+                    false
+                } else {
+                    self.settings_state.selected = field;
+                    true
+                }
+            }
+            Some(SettingsMouseAction::ActivateField(field)) => {
+                self.settings_state.selected = field;
+                self.activate_current_setting()
+            }
+            Some(SettingsMouseAction::ScrollUp) => {
+                let next = self.settings_state.selected.saturating_sub(1);
+                if next == self.settings_state.selected {
+                    false
+                } else {
+                    self.settings_state.selected = next;
+                    true
+                }
+            }
+            Some(SettingsMouseAction::ScrollDown) => {
+                let next = (self.settings_state.selected + 1)
+                    .min(crate::tui::settings_state::SettingField::COUNT - 1);
+                if next == self.settings_state.selected {
+                    false
+                } else {
+                    self.settings_state.selected = next;
+                    true
+                }
+            }
+            Some(SettingsMouseAction::ReviewSave) => {
+                self.settings_state.confirming_save = self.settings_state.unsaved;
+                true
+            }
+            Some(SettingsMouseAction::ConfirmSave) => self.save_settings(),
+            Some(SettingsMouseAction::CancelSave) => {
+                self.settings_state.confirming_save = false;
+                true
+            }
+            Some(SettingsMouseAction::Discard | SettingsMouseAction::Close) => {
+                self.show_settings = false;
+                if self.config_only {
+                    self.should_quit = true;
+                }
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn set_hover(&mut self, target: Option<HoverTarget>) -> bool {
+        if self.hovered == target {
+            return false;
+        }
+        self.hovered = target;
+        true
     }
 
     /// Returns the current warning message if it's still fresh (< 5 seconds old).
@@ -399,6 +593,49 @@ impl App {
             return self.handle_filter_key(key);
         }
 
+        if self.fullscreen != FullscreenView::None {
+            return match key.code {
+                KeyCode::Esc => {
+                    self.fullscreen = FullscreenView::None;
+                    true
+                }
+                KeyCode::Char('q') => {
+                    self.should_quit = true;
+                    false
+                }
+                KeyCode::Char('?') => {
+                    self.show_help = true;
+                    true
+                }
+                KeyCode::Char('c') => {
+                    self.fullscreen = if self.fullscreen == FullscreenView::Heatmap {
+                        FullscreenView::None
+                    } else {
+                        self.recompute_heatmap();
+                        FullscreenView::Heatmap
+                    };
+                    true
+                }
+                KeyCode::Char('v') => {
+                    self.fullscreen = if self.fullscreen == FullscreenView::SpikeChart {
+                        FullscreenView::None
+                    } else {
+                        self.recompute_spike_chart();
+                        FullscreenView::SpikeChart
+                    };
+                    true
+                }
+                _ => false,
+            };
+        }
+
+        if let KeyCode::Char(c) = key.code {
+            if let Some(scope) = Scope::from_card_toggle_key(c) {
+                self.card_visibility.toggle(scope);
+                return true;
+            }
+        }
+
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => {
                 if self.applied_filter.is_empty() {
@@ -425,26 +662,10 @@ impl App {
                 self.filter_text = self.applied_filter.clone();
                 true
             }
-            KeyCode::Char('t') => {
-                self.scope = Scope::Today;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('w') => {
-                self.scope = Scope::Week;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('m') => {
-                self.scope = Scope::Month;
-                self.reset_view_state();
-                true
-            }
-            KeyCode::Char('a') => {
-                self.scope = Scope::AllTime;
-                self.reset_view_state();
-                true
-            }
+            KeyCode::Char('t') => self.select_scope(Scope::Today),
+            KeyCode::Char('w') => self.select_scope(Scope::Week),
+            KeyCode::Char('m') => self.select_scope(Scope::Month),
+            KeyCode::Char('a') => self.select_scope(Scope::AllTime),
             KeyCode::Char('s') => {
                 self.sort_order = self.sort_order.next();
                 self.reset_view_state();
@@ -465,16 +686,18 @@ impl App {
                 self.recompute_detail();
                 true
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                let max =
-                    u16::try_from(self.rendered_row_count().saturating_sub(1)).unwrap_or(u16::MAX);
-                self.scroll_offset = self.scroll_offset.saturating_add(1).min(max);
+            KeyCode::Char('c') => {
+                self.recompute_heatmap();
+                self.fullscreen = FullscreenView::Heatmap;
                 true
             }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            KeyCode::Char('v') => {
+                self.recompute_spike_chart();
+                self.fullscreen = FullscreenView::SpikeChart;
                 true
             }
+            KeyCode::Char('j') | KeyCode::Down => self.scroll_down(1),
+            KeyCode::Char('k') | KeyCode::Up => self.scroll_up(1),
             KeyCode::Left => {
                 let new_scope = match self.scope {
                     Scope::Today | Scope::Week => Scope::Today,
@@ -507,6 +730,33 @@ impl App {
         }
     }
 
+    fn select_scope(&mut self, scope: Scope) -> bool {
+        self.scope = scope;
+        self.reset_view_state();
+        true
+    }
+
+    fn scroll_down(&mut self, rows: u16) -> bool {
+        let max = u16::try_from(self.rendered_row_count().saturating_sub(1)).unwrap_or(u16::MAX);
+        let next = self.scroll_offset.saturating_add(rows).min(max);
+        if next == self.scroll_offset {
+            false
+        } else {
+            self.scroll_offset = next;
+            true
+        }
+    }
+
+    fn scroll_up(&mut self, rows: u16) -> bool {
+        let next = self.scroll_offset.saturating_sub(rows);
+        if next == self.scroll_offset {
+            false
+        } else {
+            self.scroll_offset = next;
+            true
+        }
+    }
+
     fn handle_filter_key(&mut self, key: KeyEvent) -> bool {
         match key.code {
             KeyCode::Enter => {
@@ -534,6 +784,17 @@ impl App {
 
     #[allow(clippy::too_many_lines)]
     fn handle_settings_key(&mut self, key: KeyEvent) -> bool {
+        if self.settings_state.confirming_save {
+            return match key.code {
+                KeyCode::Char('y' | 'Y') | KeyCode::Enter => self.save_settings(),
+                KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                    self.settings_state.confirming_save = false;
+                    true
+                }
+                _ => false,
+            };
+        }
+
         let state = &mut self.settings_state;
 
         // If editing a text/numeric field
@@ -541,8 +802,11 @@ impl App {
             match key.code {
                 KeyCode::Enter => {
                     let field = state.current_field();
-                    if field.apply_value(&mut state.draft, &state.edit_buffer) {
-                        state.unsaved = true;
+                    match field.apply_value(&mut state.draft, &state.edit_buffer) {
+                        Ok(()) => state.unsaved = true,
+                        Err(message) => {
+                            state.flash_message = Some((message.to_string(), Instant::now()));
+                        }
                     }
                     state.editing = false;
                     state.edit_buffer.clear();
@@ -553,7 +817,9 @@ impl App {
                     state.edit_buffer.clear();
                     return true;
                 }
-                KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
+                KeyCode::Char(c)
+                    if state.current_field().is_text() || c.is_ascii_digit() || c == '.' =>
+                {
                     state.edit_buffer.push(c);
                     return true;
                 }
@@ -570,6 +836,9 @@ impl App {
             KeyCode::Esc | KeyCode::Char('S') => {
                 // Close settings, discard unsaved changes
                 self.show_settings = false;
+                if self.config_only {
+                    self.should_quit = true;
+                }
                 true
             }
             KeyCode::Char('j') | KeyCode::Down => {
@@ -580,23 +849,7 @@ impl App {
                 state.selected = state.selected.saturating_sub(1);
                 true
             }
-            KeyCode::Enter | KeyCode::Char(' ') => {
-                let field = state.current_field();
-                if field.is_bool() {
-                    field.toggle_bool(&mut state.draft);
-                    state.unsaved = true;
-                    true
-                } else if field.is_enum() {
-                    field.cycle_enum(&mut state.draft);
-                    state.unsaved = true;
-                    true
-                } else {
-                    // Enter edit mode for numeric fields
-                    state.editing = true;
-                    state.edit_buffer = field.edit_value(&state.draft);
-                    true
-                }
-            }
+            KeyCode::Enter | KeyCode::Char(' ') => self.activate_current_setting(),
             KeyCode::Left => {
                 let field = state.current_field();
                 if field.is_enum() {
@@ -619,31 +872,50 @@ impl App {
                 }
             }
             KeyCode::Char('W') => {
-                // Save to disk
-                let old_metric = self.config.sparkline_metric;
-                match self.settings_state.draft.save() {
-                    Ok(()) => {
-                        self.config = self.settings_state.draft.clone();
-                        self.no_cost = self.settings_state.draft.no_cost;
-                        self.settings_state.unsaved = false;
-                        self.settings_state.flash_message =
-                            Some(("Saved!".to_string(), Instant::now()));
-                        // Recompute all-time base if sparkline metric changed
-                        if self.config.sparkline_metric != old_metric {
-                            if let Err(e) = self.compute_all_time_base() {
-                                self.set_warning(format!("History refresh failed: {e}"));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        self.last_warning =
-                            Some((format!("Failed to save config: {e}"), Instant::now()));
-                    }
-                }
+                self.settings_state.confirming_save = self.settings_state.unsaved;
                 true
             }
             _ => false,
         }
+    }
+
+    fn activate_current_setting(&mut self) -> bool {
+        let field = self.settings_state.current_field();
+        if field.is_bool() {
+            field.toggle_bool(&mut self.settings_state.draft);
+            self.settings_state.unsaved = true;
+        } else if field.is_enum() {
+            field.cycle_enum(&mut self.settings_state.draft);
+            self.settings_state.unsaved = true;
+        } else {
+            self.settings_state.editing = true;
+            self.settings_state.edit_buffer = field.edit_value(&self.settings_state.draft);
+        }
+        true
+    }
+
+    fn save_settings(&mut self) -> bool {
+        let old_metric = self.config.sparkline_metric;
+        match self.settings_state.draft.save() {
+            Ok(()) => {
+                self.config = self.settings_state.draft.clone();
+                self.no_cost = self.settings_state.draft.no_cost;
+                self.settings_state.unsaved = false;
+                self.settings_state.confirming_save = false;
+                self.settings_state.flash_message = Some(("Saved!".to_string(), Instant::now()));
+                if self.config.sparkline_metric != old_metric {
+                    if let Err(e) = self.compute_all_time_base() {
+                        self.set_warning(format!("History refresh failed: {e}"));
+                    }
+                }
+            }
+            Err(error) => {
+                self.settings_state.confirming_save = false;
+                self.settings_state.flash_message =
+                    Some((format!("Failed to save config: {error}"), Instant::now()));
+            }
+        }
+        true
     }
 
     /// Load all records older than the in-memory window, apply pricing,
@@ -1014,6 +1286,44 @@ impl App {
             self.history_summaries.clear();
         }
     }
+
+    fn refresh_active_visual(&mut self) {
+        match self.fullscreen {
+            FullscreenView::None => {}
+            FullscreenView::Heatmap => self.recompute_heatmap(),
+            FullscreenView::SpikeChart => self.recompute_spike_chart(),
+        }
+        self.dirty |= self.fullscreen != FullscreenView::None;
+    }
+
+    fn recompute_heatmap(&mut self) {
+        let since = Utc::now().date_naive() - Duration::days(364);
+        match cache::Cache::open()
+            .and_then(|cache| cache.load_entries_filtered(Some(since), None, &[]))
+        {
+            Ok(records) => {
+                self.heatmap_data = heatmap::build_heatmap_data(&records);
+            }
+            Err(error) => {
+                self.heatmap_data.clear();
+                self.last_warning = Some((
+                    format!("Contribution history unavailable: {error}"),
+                    Instant::now(),
+                ));
+            }
+        }
+    }
+
+    fn recompute_spike_chart(&mut self) {
+        let now = Utc::now();
+        let start = spike_chart::start_of_day(now);
+        self.spike_data = Some(spike_chart::build_spike_data(
+            &self.cached_records,
+            start,
+            now,
+            5 * 60,
+        ));
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1113,5 +1423,49 @@ mod tests {
         let details = vec![ModelUsage::default(); 4];
         let history = vec![summary(2)];
         assert_eq!(table_row_count(&details, &history, false), 5);
+    }
+
+    #[test]
+    fn summary_cards_start_visible_and_toggle_independently() {
+        let mut visibility = SummaryCardVisibility::default();
+        assert_eq!(visibility.visible_count(), 4);
+        assert!(Scope::ALL
+            .into_iter()
+            .all(|scope| visibility.is_visible(scope)));
+
+        visibility.toggle(Scope::Week);
+        visibility.toggle(Scope::AllTime);
+
+        assert!(visibility.is_visible(Scope::Today));
+        assert!(!visibility.is_visible(Scope::Week));
+        assert!(visibility.is_visible(Scope::Month));
+        assert!(!visibility.is_visible(Scope::AllTime));
+        assert_eq!(visibility.visible_count(), 2);
+
+        visibility.toggle(Scope::Week);
+        assert!(visibility.is_visible(Scope::Week));
+        assert_eq!(visibility.visible_count(), 3);
+    }
+
+    #[test]
+    fn all_summary_cards_can_be_hidden() {
+        let mut visibility = SummaryCardVisibility::default();
+        for scope in Scope::ALL {
+            visibility.toggle(scope);
+        }
+
+        assert!(!visibility.any_visible());
+        assert_eq!(visibility.visible_count(), 0);
+    }
+
+    #[test]
+    fn only_uppercase_scope_keys_toggle_cards() {
+        assert_eq!(Scope::from_card_toggle_key('T'), Some(Scope::Today));
+        assert_eq!(Scope::from_card_toggle_key('W'), Some(Scope::Week));
+        assert_eq!(Scope::from_card_toggle_key('M'), Some(Scope::Month));
+        assert_eq!(Scope::from_card_toggle_key('A'), Some(Scope::AllTime));
+        assert_eq!(Scope::from_card_toggle_key('t'), None);
+        assert_eq!(Scope::from_card_toggle_key('w'), None);
+        assert_eq!(Scope::from_card_toggle_key('x'), None);
     }
 }

@@ -3,8 +3,10 @@ pub mod claude_code;
 pub mod cline;
 pub mod cline_format;
 pub mod codex;
+pub mod continue_dev;
 pub mod copilot;
 pub mod cursor;
+pub mod custom;
 pub mod discover;
 pub mod droid;
 pub mod gemini;
@@ -75,26 +77,31 @@ impl Default for SourceSet {
 
 impl SourceSet {
     pub fn new() -> Self {
-        Self {
-            providers: vec![
-                Box::new(claude_code::ClaudeCodeSource::new()),
-                Box::new(codex::CodexSource::new()),
-                Box::new(gemini::GeminiSource::new()),
-                Box::new(opencode::OpenCodeSource::new()),
-                Box::new(amp::AmpSource::new()),
-                Box::new(cline::ClineSource::new()),
-                Box::new(roo_code::RooCodeSource::new()),
-                Box::new(kilo_code::KiloCodeSource::new()),
-                Box::new(copilot::CopilotSource::new()),
-                Box::new(pi_agent::PiAgentSource::new()),
-                Box::new(kimi::KimiSource::new()),
-                Box::new(droid::DroidSource::new()),
-                Box::new(openclaw::OpenClawSource::new()),
-                Box::new(qwen::QwenSource::new()),
-                Box::new(piebald::PiebaldSource::new()),
-                Box::new(cursor::CursorSource::new()),
-            ],
-        }
+        let mut providers: Vec<Box<dyn Source>> = vec![
+            Box::new(claude_code::ClaudeCodeSource::new()),
+            Box::new(codex::CodexSource::new()),
+            Box::new(gemini::GeminiSource::new()),
+            Box::new(opencode::OpenCodeSource::new()),
+            Box::new(amp::AmpSource::new()),
+            Box::new(cline::ClineSource::new()),
+            Box::new(roo_code::RooCodeSource::new()),
+            Box::new(kilo_code::KiloCodeSource::new()),
+            Box::new(copilot::CopilotSource::new()),
+            Box::new(continue_dev::ContinueSource::new()),
+            Box::new(pi_agent::PiAgentSource::new()),
+            Box::new(kimi::KimiSource::new()),
+            Box::new(droid::DroidSource::new()),
+            Box::new(openclaw::OpenClawSource::new()),
+            Box::new(qwen::QwenSource::new()),
+            Box::new(piebald::PiebaldSource::new()),
+            Box::new(cursor::CursorSource::new()),
+        ];
+        providers.extend(
+            custom::CustomSource::load_configured()
+                .into_iter()
+                .map(|source| Box::new(source) as Box<dyn Source>),
+        );
+        Self { providers }
     }
 
     pub fn available(&self) -> Vec<&dyn Source> {

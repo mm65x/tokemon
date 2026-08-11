@@ -11,6 +11,8 @@ mod widgets;
 
 use std::time::Duration;
 
+use ratatui::layout::Rect;
+
 use crate::config::Config;
 use app::{App, Scope};
 use event::{Event, EventHandler};
@@ -53,7 +55,17 @@ pub fn run(
         .enable_all()
         .build()?;
 
-    runtime.block_on(async { run_async(config, scope, tick_secs, offline).await })
+    runtime.block_on(async { run_async(config, scope, tick_secs, offline, false).await })
+}
+
+/// Run the keyboard-driven configuration editor without requiring a dashboard session.
+pub fn run_config(config: &Config, offline: bool) -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+
+    runtime
+        .block_on(async { run_async(config, Scope::Today, DEFAULT_TICK_SECS, offline, true).await })
 }
 
 async fn run_async(
@@ -61,9 +73,13 @@ async fn run_async(
     scope: Scope,
     tick_secs: u64,
     offline: bool,
+    config_only: bool,
 ) -> anyhow::Result<()> {
     let mut terminal = terminal::init()?;
+    let mut terminal_area = Rect::from(terminal.size()?);
     let mut app = App::new(config, scope, offline);
+    app.config_only = config_only;
+    app.show_settings = config_only;
 
     let mut events = EventHandler::new(
         Duration::from_secs(tick_secs),
@@ -87,7 +103,10 @@ async fn run_async(
             match &event {
                 Event::Render => {} // render ticks don't mark state dirty
                 other => {
-                    app.handle_event(other);
+                    if let Event::Resize(width, height) = other {
+                        terminal_area = Rect::new(0, 0, *width, *height);
+                    }
+                    app.handle_event(other, terminal_area);
                 }
             }
 

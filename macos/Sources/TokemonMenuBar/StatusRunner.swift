@@ -84,7 +84,11 @@ private final class TimeoutState: @unchecked Sendable {
     }
 }
 
-public final class StatusRunner {
+public protocol StatusRunning: Sendable {
+    func runOffline(arguments: [String]) throws -> StatusCommandResult
+}
+
+public final class StatusRunner: @unchecked Sendable {
     public let executableURL: URL
     public let timeout: TimeInterval
     public let outputLimit: Int
@@ -181,3 +185,5 @@ public final class StatusRunner {
         try run(arguments: ["status", "--json", "--offline"] + arguments)
     }
 }
+
+extension StatusRunner: StatusRunning {}

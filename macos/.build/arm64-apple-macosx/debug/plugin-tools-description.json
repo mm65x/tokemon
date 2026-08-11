@@ -1,0 +1,676 @@
+{
+  "builtTestProducts" : [
+    {
+      "binaryPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.xctest/Contents/MacOS/TokemonMenuBarPackageTests",
+      "packagePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos",
+      "productName" : "TokemonMenuBarPackageTests"
+    }
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.TokemonMenuBar-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/sources",
+      "importPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/App.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusRunner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "TokemonMenuBar",
+      "moduleOutputPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules/TokemonMenuBar.swiftmodule",
+      "objects" : [
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.swift.o",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.swift.o",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "TokemonMenuBar_main",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "macos"
+      ],
+      "outputFileMapPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules/TokemonMenuBar.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/App.swift",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusModels.swift",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusRunner.swift"
+      ],
+      "tempsPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.TokemonMenuBarPackageTests-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/sources",
+      "importPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.derived/runner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules/TokemonMenuBarTests.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "TokemonMenuBarPackageTests",
+      "moduleOutputPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules/TokemonMenuBarPackageTests.swiftmodule",
+      "objects" : [
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/runner.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/include/TokemonMenuBarPackageTests-Swift.h",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "macos"
+      ],
+      "outputFileMapPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/runner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules/TokemonMenuBarPackageTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.derived/runner.swift"
+      ],
+      "tempsPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.TokemonMenuBarTests-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/sources",
+      "importPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Tests/TokemonMenuBarTests/StatusModelsTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "TokemonMenuBarTests",
+      "moduleOutputPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules/TokemonMenuBarTests.swiftmodule",
+      "objects" : [
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "macos"
+      ],
+      "outputFileMapPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules/TokemonMenuBarTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/private/tmp/tokemon-issue-26-macos-applet/macos/Tests/TokemonMenuBarTests/StatusModelsTests.swift"
+      ],
+      "tempsPath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "TokemonMenuBar" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "TokemonMenuBar",
+      "-package-name",
+      "macos",
+      "-c",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/App.swift",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusModels.swift",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusRunner.swift",
+      "-I",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "TokemonMenuBar_main",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "macos",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "TokemonMenuBarPackageTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "TokemonMenuBarPackageTests",
+      "-package-name",
+      "macos",
+      "-c",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.derived/runner.swift",
+      "-I",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/include/TokemonMenuBarPackageTests-Swift.h",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "macos",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "TokemonMenuBarTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "TokemonMenuBarTests",
+      "-package-name",
+      "macos",
+      "-c",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/Tests/TokemonMenuBarTests/StatusModelsTests.swift",
+      "-I",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.4.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "macos",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "TokemonMenuBar" : [
+
+    ],
+    "TokemonMenuBarPackageTests" : [
+      "TokemonMenuBarTests",
+      "TokemonMenuBar"
+    ],
+    "TokemonMenuBarTests" : [
+      "TokemonMenuBar"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.derived/runner.swift" : {
+      "inputs" : [
+
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.derived/runner.swift"
+        }
+      ]
+    }
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar-entitlement.plist"
+    },
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/App.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusRunner.swift"
+        }
+      ],
+      "outputFilePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/sources"
+    },
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.swift.o"
+        }
+      ],
+      "outputFilePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.product/Objects.LinkFileList"
+    },
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.derived/runner.swift"
+        }
+      ],
+      "outputFilePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/sources"
+    },
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/runner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests.swift.o"
+        }
+      ],
+      "outputFilePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.product/Objects.LinkFileList"
+    },
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/private/tmp/tokemon-issue-26-macos-applet/macos/Tests/TokemonMenuBarTests/StatusModelsTests.swift"
+        }
+      ],
+      "outputFilePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/sources"
+    },
+    "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}

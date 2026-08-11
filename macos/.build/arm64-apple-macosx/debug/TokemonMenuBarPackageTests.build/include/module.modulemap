@@ -1,0 +1,3 @@
+module TokemonMenuBarPackageTests {
+    header "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarPackageTests.build/include/TokemonMenuBarPackageTests-Swift.h"
+}

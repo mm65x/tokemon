@@ -1,0 +1,26 @@
+{
+  "": {
+    "swift-dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/primary.swiftdeps"
+  },
+  "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/App.swift": {
+    "dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.d",
+    "object": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.swift.o",
+    "swiftmodule": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App~partial.swiftmodule",
+    "swift-dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.swiftdeps",
+    "diagnostics": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/App.dia"
+  },
+  "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusModels.swift": {
+    "dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.d",
+    "object": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.swift.o",
+    "swiftmodule": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels~partial.swiftmodule",
+    "swift-dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.swiftdeps",
+    "diagnostics": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusModels.dia"
+  },
+  "/private/tmp/tokemon-issue-26-macos-applet/macos/Sources/TokemonMenuBar/StatusRunner.swift": {
+    "dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.d",
+    "object": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.swift.o",
+    "swiftmodule": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner~partial.swiftmodule",
+    "swift-dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.swiftdeps",
+    "diagnostics": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBar.build/StatusRunner.dia"
+  }
+}

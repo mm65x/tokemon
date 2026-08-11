@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/primary.swiftdeps"
+  },
+  "/private/tmp/tokemon-issue-26-macos-applet/macos/Tests/TokemonMenuBarTests/StatusModelsTests.swift": {
+    "dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests.d",
+    "object": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests.swift.o",
+    "swiftmodule": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests~partial.swiftmodule",
+    "swift-dependencies": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests.swiftdeps",
+    "diagnostics": "/private/tmp/tokemon-issue-26-macos-applet/macos/.build/arm64-apple-macosx/debug/TokemonMenuBarTests.build/StatusModelsTests.dia"
+  }
+}

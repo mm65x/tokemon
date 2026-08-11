@@ -1,4 +1,5 @@
 /target
+/macos/.build/
 *.swp
 *.swo
 .DS_Store

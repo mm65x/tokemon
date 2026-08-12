@@ -29,4 +29,16 @@ final class StatusQueryTests: XCTestCase {
     func testAllTimeUsesMonthlyRollupsWithoutDateFilters() {
         XCTAssertEqual(StatusQuery(scope: .allTime).arguments(now: now), ["--frequency", "monthly"])
     }
+
+    func testProviderFiltersUseRepeatableArguments() {
+        let query = StatusQuery(scope: .today, providers: [" codex ", "gemini", "codex"])
+
+        XCTAssertEqual(
+            query.arguments(now: now),
+            [
+                "--frequency", "daily", "--since", "2026-08-12", "--until", "2026-08-12",
+                "--provider", "codex", "--provider", "gemini"
+            ]
+        )
+    }
 }

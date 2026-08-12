@@ -213,7 +213,9 @@ public final class AppModel: ObservableObject {
                 return .failure(executableError(path: preferences.executablePath))
             }
 
-            let result = try runner.runOffline(arguments: StatusQuery(scope: preferences.scope).arguments(now: now))
+            let result = try runner.runOffline(
+                arguments: StatusQuery(scope: preferences.scope, providers: preferences.providers).arguments(now: now)
+            )
             return .success(result)
         } catch {
             return .failure(error.localizedDescription)

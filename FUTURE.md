@@ -32,11 +32,16 @@ Cache parsed data to survive provider log rotation (e.g., Claude Code's 30-day d
 - Live-updating stats
 
 ### macOS Menu Bar App
-SwiftUI `MenuBarExtra` with:
-- Quick usage summary in menu dropdown
-- Pacemaker budgeting (green/orange/red status)
-- Provider toggles
-- Click to open detailed view
+Phase 1 local alpha is implemented in `macos/` with:
+- Quick usage summary in the menu dropdown
+- Tokens, cost, and combined headline metrics
+- Today, week, month, and all-time scopes using UTC date boundaries
+- Configurable executable path, refresh interval, metric, and scope
+- Explicit empty, error, timeout, and unavailable-cost states
+
+Remaining work is packaging, signing, distribution, provider filtering, and
+budget notifications. The alpha intentionally invokes the local status command
+directly and does not add a daemon, IPC layer, telemetry, or network service.
 
 ### MCP Server Integration
 Expose usage data as an MCP tool so AI assistants can self-monitor their token consumption. Useful for cost-aware agents.

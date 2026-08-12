@@ -71,6 +71,55 @@ cd tokemon
 cargo install --path .
 ```
 
+### macOS menu-bar app (local alpha)
+
+The repository includes an optional macOS 13+ menu-bar client. It runs entirely on
+the local machine and reads the versioned status document from the installed
+`tokemon` executable. The client always requests offline status data, so it does
+not start a daemon, open a network connection, or require provider credentials.
+
+Build and launch it from the repository:
+
+```bash
+swift build --package-path macos -c release
+macos/.build/release/TokemonMenuBar &
+```
+
+For a user-local install, copy the release executable to a stable path and
+launch that path:
+
+```bash
+mkdir -p "$HOME/.local/bin"
+install -m 755 macos/.build/release/TokemonMenuBar "$HOME/.local/bin/TokemonMenuBar"
+"$HOME/.local/bin/TokemonMenuBar" &
+```
+
+Remove the local install with `rm "$HOME/.local/bin/TokemonMenuBar"`. The
+source checkout and Rust CLI are unaffected.
+
+The menu shows a headline metric, scope, refresh time, and clear empty/error
+states. Open **Preferences…** to choose the executable path, metric (tokens,
+cost, or combined), scope (today, week, month, or all time), and refresh interval.
+Cost is labelled unavailable when the status response has no pricing table rather
+than presenting an unpriced zero. **Open dashboard** launches the detailed local
+view in a terminal window.
+
+This is an opt-in local alpha while the menu-bar packaging, signing, and
+distribution workflow are developed separately.
+
+#### Troubleshooting
+
+- **Executable not found:** build or install `tokemon`, then leave the path
+  blank to use `PATH`, or select the full path in **Preferences…**.
+- **Path is not executable:** choose the executable file itself, not its
+  containing directory, and ensure it has execute permission.
+- **Cost unavailable:** the local status response did not have a pricing table;
+  token totals remain available and no zero-cost estimate is shown.
+- **Incompatible or malformed status:** update the CLI and applet together; the
+  applet rejects unknown schema versions instead of guessing at fields.
+- **Stale result after a failure:** the last successful result remains visible
+  with an orange error message while the next scheduled refresh is pending.
+
 ## Quick Start
 
 ```bash

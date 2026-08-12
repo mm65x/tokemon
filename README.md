@@ -99,7 +99,10 @@ source checkout and Rust CLI are unaffected.
 
 The menu shows a headline metric, scope, refresh time, and clear empty/error
 states. Open **Preferences…** to choose the executable path, metric (tokens,
-cost, or combined), scope (today, week, month, or all time), and refresh interval.
+cost, or combined), scope (today, week, month, or all time), refresh interval,
+and an optional comma-separated provider allow-list. Leave the provider field
+blank to include every provider. Names are trimmed and de-duplicated before
+being passed as repeatable provider filters to the local status command.
 Cost is labelled unavailable when the status response has no pricing table rather
 than presenting an unpriced zero. **Open dashboard** launches the detailed local
 view in a terminal window.

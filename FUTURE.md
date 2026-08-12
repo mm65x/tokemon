@@ -39,8 +39,9 @@ Phase 1 local alpha is implemented in `macos/` with:
 - Configurable executable path, refresh interval, metric, and scope
 - Explicit empty, error, timeout, and unavailable-cost states
 
-Remaining work is packaging, signing, distribution, provider filtering, and
-budget notifications. The alpha intentionally invokes the local status command
+Remaining work is packaging, signing, distribution, and budget notifications.
+Provider filtering is available from Preferences. The alpha intentionally
+invokes the local status command
 directly and does not add a daemon, IPC layer, telemetry, or network service.
 
 ### MCP Server Integration
@@ -56,7 +57,7 @@ Webview dashboard showing:
 
 ### System Tray Icon (Cross-platform)
 - Windows/Linux equivalent of menu bar app
-- Settings UI for provider configuration
+- More advanced provider configuration
 - Budget notifications
 
 ### Cloud Dashboard / Cross-machine Sync

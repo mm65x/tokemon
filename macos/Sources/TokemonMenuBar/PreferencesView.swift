@@ -4,10 +4,12 @@ struct PreferencesView: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var draft: AppPreferences
+    @State private var providerText: String
 
     init(model: AppModel) {
         self.model = model
         _draft = State(initialValue: model.preferences)
+        _providerText = State(initialValue: model.preferences.providers.joined(separator: ", "))
     }
 
     var body: some View {
@@ -40,6 +42,14 @@ struct PreferencesView: View {
                 }
             }
 
+            Section("Providers") {
+                TextField("Providers", text: $providerText)
+                    .textFieldStyle(.roundedBorder)
+                Text("Comma-separated provider names. Leave blank to include all providers.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Refresh") {
                 HStack {
                     Slider(
@@ -62,6 +72,9 @@ struct PreferencesView: View {
                     dismiss()
                 }
                 Button("Save") {
+                    draft.providers = AppPreferences.normalizedProviders(
+                        providerText.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+                    )
                     model.apply(draft)
                     dismiss()
                 }

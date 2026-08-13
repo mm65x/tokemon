@@ -8,7 +8,7 @@ final class AppModelTests: XCTestCase {
         let runner = RecordingRunner(result: StatusCommandResult(report: report, stderr: ""))
         let fixedDate = ISO8601DateFormatter().date(from: "2026-08-12T15:30:00Z")!
         let model = AppModel(
-            preferences: AppPreferences(metric: .combined, scope: .week),
+            preferences: AppPreferences(metric: .combined, scope: .week, providers: [" codex ", "gemini"]),
             runner: runner,
             clock: { fixedDate }
         )
@@ -20,7 +20,10 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.menuBarTitle, "15 tok · $0.25")
         XCTAssertEqual(
             runner.arguments,
-            ["--frequency", "weekly", "--since", "2026-08-10", "--until", "2026-08-12"]
+            [
+                "--frequency", "weekly", "--since", "2026-08-10", "--until", "2026-08-12",
+                "--provider", "codex", "--provider", "gemini"
+            ]
         )
 
         runner.fail(with: "temporary status failure")

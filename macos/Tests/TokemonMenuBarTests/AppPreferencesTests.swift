@@ -9,7 +9,8 @@ final class AppPreferencesTests: XCTestCase {
             executablePath: "/usr/local/bin/tokemon",
             metric: .cost,
             scope: .month,
-            refreshInterval: 30
+            refreshInterval: 30,
+            providers: ["codex", "gemini"]
         )
 
         expected.save(to: defaults)
@@ -26,5 +27,22 @@ final class AppPreferencesTests: XCTestCase {
             AppPreferences(refreshInterval: .greatestFiniteMagnitude).refreshInterval,
             AppPreferences.maximumRefreshInterval
         )
+    }
+
+    func testNormalizesProviderNamesWithoutChangingStableOrder() {
+        XCTAssertEqual(
+            AppPreferences.normalizedProviders([" codex ", "GEMINI", "codex", "", " gemini "]),
+            ["codex", "GEMINI"]
+        )
+    }
+
+    func testSaveNormalizesMutatedProviderNames() {
+        var preferences = AppPreferences()
+        preferences.providers = [" codex ", "", "CODEX", " gemini "]
+        let defaults = UserDefaults(suiteName: #function)!
+
+        preferences.save(to: defaults)
+
+        XCTAssertEqual(AppPreferences.load(from: defaults).providers, ["codex", "gemini"])
     }
 }

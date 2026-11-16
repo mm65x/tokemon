@@ -92,6 +92,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 summary.total_requests,
                 summary.total_input,
                 summary.total_output,
+                summary.total_cache_read(),
+                summary.total_cache_creation(),
+                summary.total_thinking,
                 total,
                 summary.total_cost,
                 header_style,
@@ -147,6 +150,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                         mu.request_count,
                         mu.input_tokens,
                         mu.output_tokens,
+                        mu.cache_read_tokens,
+                        mu.cache_creation_tokens,
+                        mu.thinking_tokens,
                         model_total,
                         mu.cost_usd,
                         sub_style,
@@ -203,6 +209,9 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
                 mu.request_count,
                 mu.input_tokens,
                 mu.output_tokens,
+                mu.cache_read_tokens,
+                mu.cache_creation_tokens,
+                mu.thinking_tokens,
                 total,
                 mu.cost_usd,
                 row_style,
@@ -216,6 +225,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     // Total row
     let total_cells = cols.build_total_row(
         app.detail_total_requests,
+        app.detail_total_input,
+        app.detail_total_output,
+        app.detail_total_cache_read,
+        app.detail_total_cache_write,
+        app.detail_total_thinking,
         app.detail_total_tokens,
         app.detail_total_cost,
     );
@@ -291,6 +305,9 @@ struct ColumnSet {
     show_client: bool,
     show_input: bool,
     show_output: bool,
+    show_cache_read: bool,
+    show_cache_write: bool,
+    show_thinking: bool,
     show_requests: bool,
     show_total: bool,
     show_cost: bool,
@@ -306,6 +323,9 @@ impl ColumnSet {
             show_requests: self.show_requests && cfg.requests,
             show_input: self.show_input && cfg.input,
             show_output: self.show_output && cfg.output,
+            show_cache_read: self.show_cache_read && cfg.cache_read,
+            show_cache_write: self.show_cache_write && cfg.cache_write,
+            show_thinking: self.show_thinking && cfg.thinking,
             show_total: self.show_total && cfg.total_tokens,
             show_cost: self.show_cost && cfg.cost,
         }
@@ -327,6 +347,15 @@ impl ColumnSet {
         }
         if self.show_output {
             h.push("Output".to_string());
+        }
+        if self.show_cache_read {
+            h.push("C.Read".to_string());
+        }
+        if self.show_cache_write {
+            h.push("C.Write".to_string());
+        }
+        if self.show_thinking {
+            h.push("Think".to_string());
         }
         if self.show_total {
             h.push("Total".to_string());
@@ -354,6 +383,15 @@ impl ColumnSet {
         if self.show_output {
             w.push(Constraint::Length(8));
         }
+        if self.show_cache_read {
+            w.push(Constraint::Length(8));
+        }
+        if self.show_cache_write {
+            w.push(Constraint::Length(8));
+        }
+        if self.show_thinking {
+            w.push(Constraint::Length(8));
+        }
         if self.show_total {
             w.push(Constraint::Length(8));
         }
@@ -372,6 +410,9 @@ impl ColumnSet {
         requests: u64,
         input: u64,
         output: u64,
+        cache_read: u64,
+        cache_write: u64,
+        thinking: u64,
         total: u64,
         cost: f64,
         base_style: Style,
@@ -429,6 +470,37 @@ impl ColumnSet {
             cells.push(Cell::from(Span::styled(s, style)));
         }
 
+        if self.show_cache_read {
+            let s = format_tokens_short(cache_read);
+            let normal_style = if use_color {
+                base_style.fg(theme::tokens_color(cache_read))
+            } else {
+                base_style
+            };
+            let style = apply_highlight(normal_style, highlight_intensity);
+            cells.push(Cell::from(Span::styled(s, style)));
+        }
+        if self.show_cache_write {
+            let s = format_tokens_short(cache_write);
+            let normal_style = if use_color {
+                base_style.fg(theme::tokens_color(cache_write))
+            } else {
+                base_style
+            };
+            let style = apply_highlight(normal_style, highlight_intensity);
+            cells.push(Cell::from(Span::styled(s, style)));
+        }
+        if self.show_thinking {
+            let s = format_tokens_short(thinking);
+            let normal_style = if use_color {
+                base_style.fg(theme::tokens_color(thinking))
+            } else {
+                base_style
+            };
+            let style = apply_highlight(normal_style, highlight_intensity);
+            cells.push(Cell::from(Span::styled(s, style)));
+        }
+
         if self.show_total {
             let total_s = format_tokens_short(total);
             let normal_total = if use_color {
@@ -454,9 +526,15 @@ impl ColumnSet {
         cells
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn build_total_row(
         self,
         total_requests: u64,
+        total_input: u64,
+        total_output: u64,
+        total_cache_read: u64,
+        total_cache_write: u64,
+        total_thinking: u64,
         total_tokens: u64,
         total_cost: f64,
     ) -> Vec<Cell<'static>> {
@@ -475,10 +553,34 @@ impl ColumnSet {
             )));
         }
         if self.show_input {
-            cells.push(Cell::from(Span::styled("", style)));
+            cells.push(Cell::from(Span::styled(
+                format_tokens_short(total_input),
+                style,
+            )));
         }
         if self.show_output {
-            cells.push(Cell::from(Span::styled("", style)));
+            cells.push(Cell::from(Span::styled(
+                format_tokens_short(total_output),
+                style,
+            )));
+        }
+        if self.show_cache_read {
+            cells.push(Cell::from(Span::styled(
+                format_tokens_short(total_cache_read),
+                style,
+            )));
+        }
+        if self.show_cache_write {
+            cells.push(Cell::from(Span::styled(
+                format_tokens_short(total_cache_write),
+                style,
+            )));
+        }
+        if self.show_thinking {
+            cells.push(Cell::from(Span::styled(
+                format_tokens_short(total_thinking),
+                style,
+            )));
         }
         if self.show_total {
             cells.push(Cell::from(Span::styled(
@@ -495,13 +597,30 @@ impl ColumnSet {
 
 /// Choose which columns to display based on terminal width.
 fn choose_columns(width: usize) -> ColumnSet {
-    if width >= 86 {
+    if width >= 110 {
+        // All columns including cache and thinking
         ColumnSet {
             show_api: true,
             show_client: true,
             show_requests: true,
             show_input: true,
             show_output: true,
+            show_cache_read: true,
+            show_cache_write: true,
+            show_thinking: true,
+            show_total: true,
+            show_cost: true,
+        }
+    } else if width >= 86 {
+        ColumnSet {
+            show_api: true,
+            show_client: true,
+            show_requests: true,
+            show_input: true,
+            show_output: true,
+            show_cache_read: false,
+            show_cache_write: false,
+            show_thinking: false,
             show_total: true,
             show_cost: true,
         }
@@ -512,6 +631,9 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: true,
             show_input: true,
             show_output: true,
+            show_cache_read: false,
+            show_cache_write: false,
+            show_thinking: false,
             show_total: true,
             show_cost: true,
         }
@@ -522,6 +644,9 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: true,
             show_input: true,
             show_output: true,
+            show_cache_read: false,
+            show_cache_write: false,
+            show_thinking: false,
             show_total: true,
             show_cost: true,
         }
@@ -532,6 +657,9 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: true,
             show_input: false,
             show_output: false,
+            show_cache_read: false,
+            show_cache_write: false,
+            show_thinking: false,
             show_total: true,
             show_cost: true,
         }
@@ -542,6 +670,9 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_requests: false,
             show_input: false,
             show_output: false,
+            show_cache_read: false,
+            show_cache_write: false,
+            show_thinking: false,
             show_total: true,
             show_cost: true,
         }
@@ -613,15 +744,44 @@ mod tests {
             1,
             2,
             3,
+            0,
+            0,
+            0,
             5,
             0.1,
             Style::default(),
             false,
             0.0,
         );
-        let total = columns.build_total_row(1, 5, 0.1);
+        let total = columns.build_total_row(1, 2, 3, 0, 0, 0, 5, 0.1);
 
         assert_eq!(row.len(), columns.headers().len());
         assert_eq!(total.len(), columns.headers().len());
+    }
+
+    #[test]
+    fn wide_layout_shows_cache_and_thinking_columns() {
+        let config = ColumnConfig::default();
+        let columns = choose_columns(120).mask(&config);
+
+        assert_eq!(
+            columns.headers(),
+            [
+                "Model", "API", "Client", "Reqs", "Input", "Output", "C.Read", "C.Write", "Think",
+                "Total", "Cost"
+            ]
+        );
+        assert_eq!(columns.headers().len(), columns.widths().len());
+    }
+
+    #[test]
+    fn medium_layout_hides_cache_and_thinking_columns() {
+        let config = ColumnConfig::default();
+        let columns = choose_columns(90).mask(&config);
+
+        assert_eq!(
+            columns.headers(),
+            ["Model", "API", "Client", "Reqs", "Input", "Output", "Total", "Cost"]
+        );
     }
 }

@@ -46,6 +46,16 @@ pub trait Source: Send + Sync {
     /// Parse one file into usage entries
     fn parse_file(&self, path: &Path) -> Result<Vec<Record>>;
 
+    /// Version of this source's parsing logic.
+    ///
+    /// Cached records are only re-parsed when their source file changes. Bump
+    /// this when a parser change alters its output for files that have not
+    /// changed (for example, a newly extracted field), so records cached by an
+    /// older release are rebuilt on the next run.
+    fn parser_version(&self) -> u32 {
+        1
+    }
+
     /// Parse all files in parallel with dedup.
     ///
     /// Handles individual file errors by logging a warning and continuing.

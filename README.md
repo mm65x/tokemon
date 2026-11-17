@@ -19,7 +19,7 @@ Unified token usage tracking across all your AI coding tools. `tokemon top` prov
 
 ## Highlights
 
-- **16 providers** — Claude Code, Codex, Gemini CLI, Amp, OpenCode, Cline, Roo Code, Kilo Code, Copilot, Pi Agent, Kimi, Droid, OpenClaw, Qwen Code, Piebald, Cursor
+- **17 providers** — Claude Code, Codex, Gemini CLI, Antigravity, Amp, OpenCode, Cline, Roo Code, Kilo Code, Copilot, Pi Agent, Kimi, Droid, OpenClaw, Qwen Code, Piebald, Cursor
 - **Auto-discovery** — detects which tools are installed and finds their log directories automatically
 - **Cost estimation** — LiteLLM pricing database with three-level model name matching
 - **SQLite cache** — parsed data is cached for instant repeated runs and survives log rotation
@@ -253,6 +253,7 @@ Use `n` or `N` to add a template, `Enter` to edit a field, `t` to test, `s` to s
 | Claude Code | `~/.claude/projects/{project}/{uuid}.jsonl` | JSONL |
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/*.jsonl` | JSONL |
 | Gemini CLI | `~/.gemini/tmp/{project}/chats/session-*.json` | JSON |
+| Antigravity | `~/.gemini/antigravity{,-cli}/brain/*/.system_generated/logs/transcript.jsonl` (tokens), `~/.gemini/antigravity{,-cli}/conversations/*.db` (model) | JSONL + SQLite |
 | Amp | `~/.local/share/amp/threads/` | JSONL |
 | OpenCode | `~/.local/share/opencode/opencode.db` | SQLite |
 | Cline | VSCode globalStorage | JSON |

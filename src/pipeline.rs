@@ -118,6 +118,17 @@ fn parse_with_cache(
         return Ok(parse_all_directly(&providers));
     };
 
+    // Rebuild cached records for any source whose parser output changed since
+    // they were cached (best-effort; a failure only leaves older records).
+    for provider in &providers {
+        if let Err(e) = cache.sync_parser_version(provider.name(), provider.parser_version()) {
+            eprintln!(
+                "[tokemon] Warning: failed to check parser version for {}: {e}",
+                provider.name()
+            );
+        }
+    }
+
     let has_filters = opts.since.is_some() || opts.until.is_some() || !opts.providers.is_empty();
 
     // If cache is fresh and no --refresh/--reparse flag, skip discovery entirely

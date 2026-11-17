@@ -13,6 +13,7 @@ pub fn display_client(raw: &str) -> Cow<'static, str> {
         "claude-code" => "Claude Code".into(),
         "codex" => "Codex CLI".into(),
         "gemini" => "Gemini CLI".into(),
+        "antigravity" => "Antigravity".into(),
         "opencode" => "OpenCode".into(),
         "amp" => "Amp".into(),
         "cline" => "Cline".into(),
@@ -203,6 +204,7 @@ mod tests {
         assert_eq!(display_client("claude-code"), "Claude Code");
         assert_eq!(display_client("roo-code"), "Roo Code");
         assert_eq!(display_client("opencode"), "OpenCode");
+        assert_eq!(display_client("antigravity"), "Antigravity");
         assert_eq!(display_client("copilot"), "GitHub Copilot");
         assert_eq!(display_client("continue"), "Continue");
         // Unknown gets title-cased

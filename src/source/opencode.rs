@@ -49,8 +49,7 @@ impl super::Source for OpenCodeSource {
     fn data_dir(&self) -> PathBuf {
         self.db_path
             .parent()
-            .map(std::path::Path::to_path_buf)
-            .unwrap_or_default()
+            .map_or_else(PathBuf::new, std::path::Path::to_path_buf)
     }
 
     fn discover_files(&self) -> Vec<PathBuf> {

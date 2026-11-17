@@ -427,6 +427,46 @@ impl Cache {
         }
     }
 
+    /// Make sure cached records for `provider` were produced by `version` of
+    /// its parser.
+    ///
+    /// A provider with no stored version is treated as version 1. When the
+    /// stored version differs, the provider's cached files are flagged stale
+    /// (their recorded mtime is reset so the next run re-parses them) and the
+    /// discovery timestamp is cleared so that run is not short-circuited.
+    /// Entries are kept, so history from files that no longer exist survives.
+    ///
+    /// Returns `true` if cached records were invalidated.
+    pub fn sync_parser_version(&self, provider: &str, version: u32) -> crate::error::Result<bool> {
+        let key = format!("parser_version:{provider}");
+        let stored: u32 = self
+            .conn
+            .query_row(
+                "SELECT value FROM cache_meta WHERE key = ?1",
+                params![key],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1);
+        if stored == version {
+            return Ok(false);
+        }
+
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "UPDATE usage_entries SET source_mtime = -1 WHERE provider = ?1",
+            params![provider],
+        )?;
+        tx.execute("DELETE FROM cache_meta WHERE key = 'last_discovery_at'", [])?;
+        tx.execute(
+            "INSERT OR REPLACE INTO cache_meta (key, value) VALUES (?1, ?2)",
+            params![key, version.to_string()],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
     /// Record the current time as the last discovery timestamp.
     pub fn set_last_discovery(&self) -> crate::error::Result<()> {
         let now = SystemTime::now()
@@ -568,6 +608,43 @@ mod tests {
         let cache = Cache { conn };
         cache.init_schema().unwrap();
         cache
+    }
+
+    #[test]
+    fn parser_version_change_invalidates_only_that_provider() {
+        let mut cache = test_cache();
+        let a = Path::new("/tmp/a.jsonl");
+        let b = Path::new("/tmp/b.jsonl");
+        let entries = vec![
+            (
+                a,
+                100,
+                vec![make_record("alpha", "2026-03-01T10:00:00Z", None)],
+            ),
+            (
+                b,
+                200,
+                vec![make_record("beta", "2026-03-01T11:00:00Z", None)],
+            ),
+        ];
+        cache.write_entries(&entries).unwrap();
+        assert!(!cache.should_rediscover(3600));
+
+        // Unversioned providers are at version 1: nothing to do.
+        assert!(!cache.sync_parser_version("alpha", 1).unwrap());
+        assert_eq!(cache.cached_file_mtimes().unwrap()["/tmp/a.jsonl"], 100);
+
+        // A newer parser flags that provider's files stale and forces discovery.
+        assert!(cache.sync_parser_version("alpha", 2).unwrap());
+        let mtimes = cache.cached_file_mtimes().unwrap();
+        assert_eq!(mtimes["/tmp/a.jsonl"], -1);
+        assert_eq!(mtimes["/tmp/b.jsonl"], 200);
+        assert!(cache.should_rediscover(3600));
+        // The entries themselves are kept.
+        assert_eq!(cache.load_all_entries().unwrap().len(), 2);
+
+        // Idempotent once recorded.
+        assert!(!cache.sync_parser_version("alpha", 2).unwrap());
     }
 
     fn make_record(provider: &str, timestamp: &str, session_id: Option<&str>) -> Record {

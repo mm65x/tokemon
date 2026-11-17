@@ -40,9 +40,7 @@ pub fn vscode_global_storage_dirs() -> Vec<PathBuf> {
     } else if cfg!(target_os = "linux") {
         home_dir().join(".config")
     } else {
-        directories::BaseDirs::new()
-            .map(|d| d.data_dir().to_path_buf())
-            .unwrap_or_default()
+        directories::BaseDirs::new().map_or_else(PathBuf::new, |d| d.data_dir().to_path_buf())
     };
 
     VSCODE_FORKS

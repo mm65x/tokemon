@@ -54,7 +54,7 @@ fn provider_prefix(provider: &str) -> &str {
 
 #[must_use]
 fn qualify_model(model: String, provider: Option<&str>) -> String {
-    let prefix = provider.map(provider_prefix).unwrap_or_default();
+    let prefix = provider.map_or("", provider_prefix);
     if prefix.is_empty()
         || model.contains('/')
         || model.starts_with("vertexai.")

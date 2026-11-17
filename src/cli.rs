@@ -158,6 +158,8 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum SourceCommands {
+    /// Open the guided editor for user-defined JSONL sources
+    Configure,
     /// Validate a definition and preview discovered records
     Validate {
         /// TOML definition file to validate

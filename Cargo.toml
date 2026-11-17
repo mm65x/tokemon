@@ -1,6 +1,6 @@
 [package]
 name = "tokemon"
-version = "0.2.7"
+version = "0.3.0"
 edition = "2021"
 description = "Unified LLM token usage tracking across all providers"
 license = "MIT"
@@ -9,6 +9,19 @@ homepage = "https://github.com/mm65x/tokemon"
 readme = "README.md"
 keywords = ["llm", "tokens", "usage", "cli", "monitoring"]
 categories = ["command-line-utilities"]
+exclude = [
+    ".github/",
+    ".githooks/",
+    ".intentionally-empty-file.o",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "FUTURE.md",
+    "Makefile",
+    "assets/",
+    "macos/",
+    "scripts/",
+    "tests/",
+]
 
 [dependencies]
 # Error handling

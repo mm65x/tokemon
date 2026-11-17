@@ -12,8 +12,54 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  verify:
+    name: Verify Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          CARGO_VER="$(python3 -c 'import re; text = open("Cargo.toml", encoding="utf-8").read(); m = re.search(r"(?m)^version\s*=\s*\"([^\"]+)\"", text); assert m; print(m.group(1))')"
+          TAG_VER="${TAG#v}"
+          if [[ "$TAG_VER" == *-* ]]; then
+            BASE_TAG_VER="${TAG_VER%%-*}"
+            if [[ "$CARGO_VER" != "$TAG_VER" && "$CARGO_VER" != "$BASE_TAG_VER" ]]; then
+              echo "Pre-release tag '$TAG' does not match Cargo.toml version '$CARGO_VER'" >&2
+              exit 1
+            fi
+          else
+            if [[ "$CARGO_VER" != "$TAG_VER" ]]; then
+              echo "Release tag '$TAG' does not match Cargo.toml version '$CARGO_VER'" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Format check
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy -- -W clippy::pedantic -A clippy::module_name_repetitions -D warnings
+
+      - name: Test
+        run: cargo test
+
+      - name: Publish dry-run
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: cargo publish --dry-run
+
   build:
     name: Build (${{ matrix.target }})
+    needs: verify
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -89,13 +135,13 @@ jobs:
 
   publish:
     name: Publish to crates.io
-    needs: build
+    needs: [verify, build]
     if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo publish --allow-dirty
+      - run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 

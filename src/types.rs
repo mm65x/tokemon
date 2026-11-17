@@ -220,6 +220,7 @@ pub struct StatusScope {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusCapabilities {
+    /// Whether cost values were calculated using an available pricing table.
     pub cost: bool,
     pub date_filters: bool,
     pub provider_filters: bool,

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Pre-push hook enforcing branch protection, tag/version consistency,
+# formatting, clippy lints, and Rust test suite before pushing to origin.
+set -euo pipefail
+
+ZERO_SHA="0000000000000000000000000000000000000000"
+has_non_delete_push=0
+
+cargo_version_at_sha() {
+    local sha="$1"
+    git show "${sha}:Cargo.toml" | python3 -c '
+import re, sys
+text = sys.stdin.read()
+m = re.search(r"(?m)^version\s*=\s*\"([^\"]+)\"", text)
+if not m:
+    sys.exit("Cargo.toml missing package version")
+print(m.group(1))
+'
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [[ -z "${local_ref:-}" ]] && continue
+
+    # Allow deleting remote branches/tags
+    if [[ "$local_sha" == "$ZERO_SHA" ]]; then
+        continue
+    fi
+
+    has_non_delete_push=1
+
+    # Block direct branch pushes to master (PR-only)
+    if [[ "$remote_ref" == "refs/heads/master" ]]; then
+        echo "[pre-push] Error: direct pushes to 'master' are blocked. Open a PR to master instead." >&2
+        exit 1
+    fi
+
+    # Validate version tags before pushing
+    if [[ "$remote_ref" == refs/tags/v* ]]; then
+        tag="${remote_ref#refs/tags/}"
+        if [[ "$tag" != *-* ]]; then
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "[pre-push] Error: invalid stable release tag '$tag' (expected vX.Y.Z)." >&2
+                exit 1
+            fi
+            expected_ver="${tag#v}"
+            toml_ver="$(cargo_version_at_sha "$local_sha")"
+            if [[ "$toml_ver" != "$expected_ver" ]]; then
+                echo "[pre-push] Error: tag '$tag' does not match Cargo.toml version '$toml_ver' at $local_sha." >&2
+                exit 1
+            fi
+            master_ref=""
+            if git rev-parse -q --verify refs/remotes/origin/master >/dev/null; then
+                master_ref="refs/remotes/origin/master"
+            elif git rev-parse -q --verify refs/heads/master >/dev/null; then
+                master_ref="refs/heads/master"
+            fi
+            if [[ -n "$master_ref" ]] && ! git merge-base --is-ancestor "$local_sha" "$master_ref"; then
+                echo "[pre-push] Error: stable release tag '$tag' ($local_sha) must be an ancestor of '$master_ref'." >&2
+                exit 1
+            fi
+        fi
+    fi
+done
+
+if [[ "$has_non_delete_push" -eq 0 ]]; then
+    exit 0
+fi
+
+echo "[pre-push] Running fmt, clippy, and cargo test..."
+cargo fmt -- --check
+cargo clippy -- -W clippy::pedantic -A clippy::module_name_repetitions -D warnings
+cargo test

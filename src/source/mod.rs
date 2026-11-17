@@ -1,4 +1,5 @@
 pub mod amp;
+pub mod antigravity;
 pub mod claude_code;
 pub mod cline;
 pub mod cline_format;
@@ -81,6 +82,7 @@ impl SourceSet {
             Box::new(claude_code::ClaudeCodeSource::new()),
             Box::new(codex::CodexSource::new()),
             Box::new(gemini::GeminiSource::new()),
+            Box::new(antigravity::AntigravitySource::new()),
             Box::new(opencode::OpenCodeSource::new()),
             Box::new(amp::AmpSource::new()),
             Box::new(cline::ClineSource::new()),

@@ -241,6 +241,11 @@ pub struct App {
     pub detail_total_cost: f64,
     pub detail_total_tokens: u64,
     pub detail_total_requests: u64,
+    pub detail_total_input: u64,
+    pub detail_total_output: u64,
+    pub detail_total_cache_read: u64,
+    pub detail_total_cache_write: u64,
+    pub detail_total_thinking: u64,
     /// Historical summaries (populated when `show_history` is true).
     pub history_summaries: Vec<PeriodSummary>,
     /// Scroll offset for the detail table.
@@ -357,6 +362,11 @@ impl App {
             detail_total_cost: 0.0,
             detail_total_tokens: 0,
             detail_total_requests: 0,
+            detail_total_input: 0,
+            detail_total_output: 0,
+            detail_total_cache_read: 0,
+            detail_total_cache_write: 0,
+            detail_total_thinking: 0,
             history_summaries: Vec::new(),
             scroll_offset: 0,
             should_quit: false,
@@ -1261,6 +1271,11 @@ impl App {
             .map(super::super::types::ModelUsage::total_tokens)
             .sum();
         self.detail_total_requests = models.iter().map(|m| m.request_count).sum();
+        self.detail_total_input = models.iter().map(|m| m.input_tokens).sum();
+        self.detail_total_output = models.iter().map(|m| m.output_tokens).sum();
+        self.detail_total_cache_read = models.iter().map(|m| m.cache_read_tokens).sum();
+        self.detail_total_cache_write = models.iter().map(|m| m.cache_creation_tokens).sum();
+        self.detail_total_thinking = models.iter().map(|m| m.thinking_tokens).sum();
         self.detail_models = models;
 
         // Historical summaries for the history view

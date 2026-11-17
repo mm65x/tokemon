@@ -425,3 +425,83 @@ fn test_session_from_fixture() {
     assert_eq!(sessions[0].session_id, "claude_sample");
     assert_eq!(sessions[0].total_tokens, 650 + 750 + 175); // three entries' totals
 }
+
+#[test]
+fn test_cli_sandbox_isolation_with_tokemon_home() {
+    use std::fs;
+    use std::process::Command;
+
+    let sandbox = tempfile::tempdir().expect("create temp sandbox");
+    let home = sandbox.path();
+
+    // Seed a Claude Code session inside the isolated TOKEMON_HOME
+    let session_dir = home.join(".claude/projects/demo");
+    fs::create_dir_all(&session_dir).expect("create session dir");
+    fs::copy(
+        "tests/fixtures/claude_sample.jsonl",
+        session_dir.join("session.jsonl"),
+    )
+    .expect("copy fixture");
+
+    let bin = env!("CARGO_BIN_EXE_tokemon");
+
+    let init_out = Command::new(bin)
+        .arg("init")
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon init");
+    assert!(
+        init_out.status.success(),
+        "tokemon init failed: {}",
+        String::from_utf8_lossy(&init_out.stderr)
+    );
+    assert!(
+        home.join(".config/tokemon/config.toml").is_file(),
+        "expected isolated config.toml inside TOKEMON_HOME"
+    );
+
+    let discover_out = Command::new(bin)
+        .arg("discover")
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon discover");
+    assert!(
+        discover_out.status.success(),
+        "tokemon discover failed: {}",
+        String::from_utf8_lossy(&discover_out.stderr)
+    );
+    let discover_stdout = String::from_utf8_lossy(&discover_out.stdout);
+    assert!(
+        discover_stdout.contains("Claude Code") && discover_stdout.contains("Found"),
+        "expected Claude Code to be discovered in sandbox, got:\n{discover_stdout}"
+    );
+
+    let report_out = Command::new(bin)
+        .args(["report", "--offline", "--json"])
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon report");
+    assert!(
+        report_out.status.success(),
+        "tokemon report failed: {}",
+        String::from_utf8_lossy(&report_out.stderr)
+    );
+    assert!(
+        home.join(".cache/tokemon/usage.db").is_file(),
+        "expected isolated usage.db inside TOKEMON_HOME"
+    );
+
+    let report: serde_json::Value =
+        serde_json::from_slice(&report_out.stdout).expect("parse report JSON");
+    assert_eq!(report["total_tokens"].as_u64(), Some(1575));
+    assert_eq!(
+        report["providers_found"],
+        serde_json::json!(["claude-code"])
+    );
+}

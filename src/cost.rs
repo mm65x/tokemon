@@ -38,6 +38,12 @@ impl PricingEngine {
         Ok(engine)
     }
 
+    /// Whether this engine has at least one pricing record available.
+    #[must_use]
+    pub fn has_prices(&self) -> bool {
+        !self.models.is_empty()
+    }
+
     fn load_base(offline: bool) -> Result<Self> {
         let cache_path = Self::cache_path();
 
@@ -456,6 +462,17 @@ mod tests {
             .expect("claude missing");
         assert_eq!(claude.cache_read_cost, Some(0.0003));
         assert_eq!(claude.cache_creation_cost, Some(0.00375));
+    }
+
+    #[test]
+    fn pricing_availability_reflects_loaded_models() {
+        let populated = PricingEngine::parse_pricing(DUMMY_JSON).expect("valid pricing");
+        assert!(populated.has_prices());
+
+        let empty = PricingEngine {
+            models: HashMap::new(),
+        };
+        assert!(!empty.has_prices());
     }
 
     #[test]

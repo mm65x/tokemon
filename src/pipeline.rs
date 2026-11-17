@@ -29,6 +29,13 @@ pub struct PipelineOptions {
     pub global_run: bool,
 }
 
+/// Entries loaded by the pipeline together with pricing availability.
+#[derive(Debug)]
+pub struct LoadedEntries {
+    pub entries: Vec<types::Record>,
+    pub pricing_available: bool,
+}
+
 impl PipelineOptions {
     #[must_use]
     pub fn from_cli_config(cli: &Cli, config: &Config) -> Self {
@@ -55,13 +62,25 @@ pub fn load_and_price(
     opts: &PipelineOptions,
     force_offline: bool,
 ) -> crate::error::Result<Vec<types::Record>> {
+    Ok(load_and_price_with_status(opts, force_offline)?.entries)
+}
+
+/// Load entries and report whether a pricing table was available.
+pub fn load_and_price_with_status(
+    opts: &PipelineOptions,
+    force_offline: bool,
+) -> crate::error::Result<LoadedEntries> {
     let registry = SourceSet::new();
     let mut entries = parse_with_cache(&registry, opts)?;
+    let mut pricing_available = false;
 
     if !opts.no_cost {
         let offline = force_offline || opts.offline;
         match cost::PricingEngine::load(offline) {
-            Ok(engine) => engine.apply_costs(&mut entries),
+            Ok(engine) => {
+                pricing_available = engine.has_prices();
+                engine.apply_costs(&mut entries);
+            }
             Err(e) => {
                 if !force_offline {
                     eprintln!("[tokemon] Warning: pricing unavailable: {e}");
@@ -70,7 +89,10 @@ pub fn load_and_price(
         }
     }
 
-    Ok(entries)
+    Ok(LoadedEntries {
+        entries,
+        pricing_available,
+    })
 }
 
 /// Parse entries using cache. Strategy:

@@ -107,6 +107,10 @@ fn cmd_init() -> anyhow::Result<()> {
 
 fn cmd_source(command: &SourceCommands) -> anyhow::Result<()> {
     match command {
+        SourceCommands::Configure => {
+            tui::run_source_config()?;
+            Ok(())
+        }
         SourceCommands::Validate { definition } => {
             let source = source::custom::CustomSource::from_file(definition)?;
             let files = source.discover_files();
@@ -132,9 +136,9 @@ fn cmd_source(command: &SourceCommands) -> anyhow::Result<()> {
             } else {
                 println!("No matching files found.");
             }
+            Ok(())
         }
     }
-    Ok(())
 }
 
 // --- Shared helpers for command handlers ---
@@ -248,7 +252,10 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
 
 fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let freq = cli.frequency;
-    let entries = load_and_price(
+    let pipeline::LoadedEntries {
+        entries,
+        pricing_available,
+    } = pipeline::load_and_price_with_status(
         &pipeline::PipelineOptions::from_cli_config(cli, config),
         false,
     )?;
@@ -289,7 +296,7 @@ fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         total_tokens,
         total_requests,
         capabilities: StatusCapabilities {
-            cost: !cli.no_cost && !config.no_cost,
+            cost: pricing_available,
             date_filters: true,
             provider_filters: true,
             periodic_summaries: true,

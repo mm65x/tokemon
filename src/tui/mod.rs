@@ -2,6 +2,7 @@ mod app;
 pub(crate) mod diff;
 mod event;
 pub(crate) mod settings_state;
+pub(crate) mod source_editor;
 mod sparkline_data;
 mod terminal;
 mod theme;
@@ -66,6 +67,11 @@ pub fn run_config(config: &Config, offline: bool) -> anyhow::Result<()> {
 
     runtime
         .block_on(async { run_async(config, Scope::Today, DEFAULT_TICK_SECS, offline, true).await })
+}
+
+/// Run the guided editor for user-defined local sources.
+pub fn run_source_config() -> anyhow::Result<()> {
+    source_editor::run()
 }
 
 async fn run_async(

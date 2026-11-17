@@ -314,9 +314,8 @@ impl super::Source for AntigravitySource {
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned());
 
-        let models = conversation_db_path(path)
-            .map(|db| load_step_models(&db))
-            .unwrap_or_default();
+        let models =
+            conversation_db_path(path).map_or_else(HashMap::new, |db| load_step_models(&db));
 
         let entries = reader
             .lines()

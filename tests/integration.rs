@@ -505,3 +505,113 @@ fn test_cli_sandbox_isolation_with_tokemon_home() {
         serde_json::json!(["claude-code"])
     );
 }
+
+/// Encode a `gen_metadata` row (protobuf) the way Antigravity writes it.
+fn antigravity_generation(steps: &[u64], model_id: &str) -> Vec<u8> {
+    fn varint(mut v: u64) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let byte = (v & 0x7F) as u8;
+            v >>= 7;
+            if v == 0 {
+                out.push(byte);
+                return out;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+    fn len_field(number: u64, payload: &[u8]) -> Vec<u8> {
+        let mut out = varint(number << 3 | 2);
+        out.extend(varint(payload.len() as u64));
+        out.extend_from_slice(payload);
+        out
+    }
+    let packed: Vec<u8> = steps.iter().flat_map(|s| varint(*s)).collect();
+    let mut blob = len_field(2, &packed);
+    blob.extend(len_field(1, &len_field(19, model_id.as_bytes())));
+    blob
+}
+
+#[test]
+fn test_cli_antigravity_model_from_conversation_db_and_cache_upgrade() {
+    use std::fs;
+    use std::process::Command;
+
+    let sandbox = tempfile::tempdir().expect("create temp sandbox");
+    let home = sandbox.path();
+    let gemini = home.join(".gemini/antigravity");
+
+    let logs = gemini.join("brain/conv-1/.system_generated/logs");
+    fs::create_dir_all(&logs).expect("create transcript dir");
+    fs::write(
+        logs.join("transcript.jsonl"),
+        concat!(
+            r#"{"step_index":4,"type":"PLANNER_RESPONSE","created_at":"2026-01-01T00:00:05Z","input_tokens":100,"output_tokens":20,"cache_read_tokens":30}"#,
+            "\n"
+        ),
+    )
+    .expect("write transcript");
+
+    let bin = env!("CARGO_BIN_EXE_tokemon");
+    let report = || -> serde_json::Value {
+        let out = Command::new(bin)
+            .args(["report", "--offline", "--json", "--no-cost"])
+            .env("TOKEMON_HOME", home)
+            .env_remove("TOKEMON_CACHE_DIR")
+            .env_remove("TOKEMON_CONFIG_DIR")
+            .output()
+            .expect("run tokemon report");
+        assert!(
+            out.status.success(),
+            "tokemon report failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).expect("parse report JSON")
+    };
+    let models = |report: &serde_json::Value| -> Vec<String> {
+        report["summaries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|s| s["models"].as_array().unwrap().iter())
+            .map(|m| m["model"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    // No conversation database yet: the transcript is cached without a model.
+    let first = report();
+    assert_eq!(first["total_tokens"].as_u64(), Some(150));
+    assert_eq!(models(&first), vec!["unknown"]);
+
+    // The database appears without the transcript changing. A cache written by
+    // an older release (before parser versions existed) must be rebuilt.
+    let conversations = gemini.join("conversations");
+    fs::create_dir_all(&conversations).expect("create conversations dir");
+    let db = rusqlite::Connection::open(conversations.join("conv-1.db")).expect("create db");
+    db.execute_batch("CREATE TABLE gen_metadata (idx integer, data blob, PRIMARY KEY (idx));")
+        .expect("create table");
+    db.execute(
+        "INSERT INTO gen_metadata (idx, data) VALUES (0, ?1)",
+        rusqlite::params![antigravity_generation(&[4, 5], "gemini-4-hydrogen")],
+    )
+    .expect("insert generation");
+    drop(db);
+
+    let cache =
+        rusqlite::Connection::open(home.join(".cache/tokemon/usage.db")).expect("open cache");
+    cache
+        .execute(
+            "DELETE FROM cache_meta WHERE key LIKE 'parser_version:%'",
+            [],
+        )
+        .expect("simulate cache from an older release");
+    drop(cache);
+
+    let second = report();
+    assert_eq!(
+        second["total_tokens"].as_u64(),
+        Some(150),
+        "tokens must not change"
+    );
+    assert_eq!(models(&second), vec!["gemini-4-hydrogen"]);
+}

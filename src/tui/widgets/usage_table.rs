@@ -14,13 +14,17 @@ use crate::tui::theme;
 /// Render the main usage detail table.
 #[allow(clippy::too_many_lines)]
 pub fn render(frame: &mut Frame, area: Rect, app: &App) {
+    let title = if app.show_sessions {
+        format!(" {} · Sessions ", app.scope.label())
+    } else if app.show_history {
+        format!(" {} · History ", app.scope.label())
+    } else {
+        format!(" {} ", app.scope.label())
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(theme::border())
-        .title(Span::styled(
-            format!(" {} ", app.scope.label()),
-            theme::header(),
-        ))
+        .title(Span::styled(title, theme::header()))
         .style(theme::text());
 
     let inner = block.inner(area);
@@ -31,9 +35,20 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     // Empty state
-    if app.detail_models.is_empty() && app.history_summaries.is_empty() {
+    let is_empty = if app.show_sessions {
+        app.detail_sessions.is_empty()
+    } else {
+        app.detail_models.is_empty() && app.history_summaries.is_empty()
+    };
+    if is_empty {
         let msg = if app.applied_filter.is_empty() {
-            "No usage data found for this period".to_string()
+            if app.show_sessions {
+                "No sessions found for this period".to_string()
+            } else {
+                "No usage data found for this period".to_string()
+            }
+        } else if app.show_sessions {
+            format!("No sessions matching \"{}\"", app.applied_filter)
         } else {
             format!("No models matching \"{}\"", app.applied_filter)
         };
@@ -61,7 +76,35 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
     // Build data rows
     let mut rows: Vec<Row> = Vec::new();
 
-    if app.show_history && !app.history_summaries.is_empty() {
+    if app.show_sessions && !app.detail_sessions.is_empty() {
+        for sess in &app.detail_sessions {
+            let name_col = format!(
+                "{} · {} ({})",
+                sess.date.format("%m-%d"),
+                sess.session_id,
+                display::display_model(&sess.dominant_model)
+            );
+            let api_col = display::infer_api_provider(&sess.dominant_model).to_string();
+            let client_col = display::display_client(&sess.client).into_owned();
+            let cells = cols.build_row(
+                &name_col,
+                &api_col,
+                &client_col,
+                0,
+                sess.input_tokens,
+                sess.output_tokens,
+                sess.cache_read_tokens,
+                sess.cache_creation_tokens,
+                sess.thinking_tokens,
+                sess.total_tokens,
+                sess.cost,
+                theme::text(),
+                false,
+                0.0,
+            );
+            rows.push(Row::new(cells).height(1));
+        }
+    } else if app.show_history && !app.history_summaries.is_empty() {
         // History mode: show per-period summaries with sub-rows
         let today = chrono::Utc::now().date_naive();
         for summary in &app.history_summaries {
@@ -257,6 +300,7 @@ pub(crate) fn row_at(area: Rect, app: &App, column: u16, row: u16) -> Option<Row
     let inner = Block::default().borders(Borders::ALL).inner(area);
     if inner.height < 3
         || inner.width < 20
+        || app.show_sessions
         || (app.detail_models.is_empty() && app.history_summaries.is_empty())
         || column < inner.x
         || column >= inner.x.saturating_add(inner.width)
@@ -277,7 +321,9 @@ fn body_row_index(inner: Rect, scroll_offset: u16, row: u16) -> Option<usize> {
 }
 
 fn row_keys(app: &App) -> Vec<Option<RowKey>> {
-    let mut rows: Vec<Option<RowKey>> = if app.show_history && !app.history_summaries.is_empty() {
+    let mut rows: Vec<Option<RowKey>> = if app.show_sessions && !app.detail_sessions.is_empty() {
+        vec![None; app.detail_sessions.len()]
+    } else if app.show_history && !app.history_summaries.is_empty() {
         app.history_summaries
             .iter()
             .flat_map(|summary| {

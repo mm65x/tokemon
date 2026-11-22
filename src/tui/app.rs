@@ -66,15 +66,21 @@ impl Scope {
         }
     }
 
-    /// Return the start date for this scope.
+    /// Return the start date for this scope in `tz`.
     #[must_use]
-    pub fn since(self) -> NaiveDate {
+    pub fn since_in(self, tz: crate::config::TimezoneMode) -> NaiveDate {
         match self {
-            Self::Today => timestamp::start_of_today(),
-            Self::Week => timestamp::start_of_week(),
-            Self::Month => timestamp::start_of_month(),
+            Self::Today => timestamp::today_in(tz),
+            Self::Week => timestamp::start_of_week_in(tz),
+            Self::Month => timestamp::start_of_month_in(tz),
             Self::AllTime => NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         }
+    }
+
+    /// Return the start date for this scope (UTC).
+    #[must_use]
+    pub fn since(self) -> NaiveDate {
+        self.since_in(crate::config::TimezoneMode::Utc)
     }
 
     #[must_use]
@@ -936,7 +942,8 @@ impl App {
     /// and compute base totals and weekly sparkline for the All Time card.
     /// Called once at startup.
     fn compute_all_time_base(&mut self) -> crate::error::Result<()> {
-        let cutoff = Scope::Month.since() - Duration::days(30);
+        let tz = self.config.timezone;
+        let cutoff = Scope::Month.since_in(tz) - Duration::days(30);
         let Some(cutoff_pred) = cutoff.pred_opt() else {
             return Ok(());
         };
@@ -975,9 +982,9 @@ impl App {
 
         // Aggregate into model-level breakdown for the detail table, plus weekly
         // summaries so History mode under All Time includes older periods.
-        let summaries = rollup::aggregate_daily(&historical);
+        let summaries = rollup::aggregate_daily_in(&historical, tz);
         let all_time_base_models = aggregate_summaries_to_models(&summaries, self.group_by);
-        let all_time_base_weekly = rollup::aggregate_weekly(&historical);
+        let all_time_base_weekly = rollup::aggregate_weekly_in(&historical, tz);
 
         self.all_time_base_cost = all_time_base_cost;
         self.all_time_base_tokens = all_time_base_tokens;
@@ -1158,24 +1165,25 @@ impl App {
     }
 
     fn recompute_cards(&mut self) {
-        let today = Utc::now().date_naive();
+        let tz = self.config.timezone;
+        let today = timestamp::today_in(tz);
         let use_cost = self.config.sparkline_metric == crate::config::SparklineMetric::Cost;
 
         // Today card
         let today_records: Vec<&Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() == today)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) == today)
             .collect();
         self.cards[0].cost = sum_cost(&today_records);
         self.cards[0].tokens = sum_tokens(&today_records);
 
         // This week card
-        let week_start = Scope::Week.since();
+        let week_start = Scope::Week.since_in(tz);
         let week_records: Vec<&Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() >= week_start)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) >= week_start)
             .collect();
         self.cards[1].cost = sum_cost(&week_records);
         self.cards[1].tokens = sum_tokens(&week_records);
@@ -1191,11 +1199,11 @@ impl App {
         );
 
         // This month card
-        let month_start = Scope::Month.since();
+        let month_start = Scope::Month.since_in(tz);
         let month_records: Vec<&Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() >= month_start)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) >= month_start)
             .collect();
         self.cards[2].cost = sum_cost(&month_records);
         self.cards[2].tokens = sum_tokens(&month_records);
@@ -1253,16 +1261,17 @@ impl App {
     }
 
     fn recompute_detail(&mut self) {
-        let since = self.scope.since();
+        let tz = self.config.timezone;
+        let since = self.scope.since_in(tz);
         let filtered: Vec<Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() >= since)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) >= since)
             .cloned()
             .collect();
 
         // Aggregate into model-level breakdown for the selected scope
-        let summaries = rollup::aggregate_daily(&filtered);
+        let summaries = rollup::aggregate_daily_in(&filtered, tz);
         let window_models = aggregate_summaries_to_models(&summaries, self.group_by);
 
         // For All Time, merge historical base models with current window.
@@ -1299,10 +1308,10 @@ impl App {
         // Historical summaries for the history view
         if self.show_history {
             self.history_summaries = match self.scope {
-                Scope::Today | Scope::Week => rollup::aggregate_daily(&filtered),
-                Scope::Month => rollup::aggregate_weekly(&filtered),
+                Scope::Today | Scope::Week => rollup::aggregate_daily_in(&filtered, tz),
+                Scope::Month => rollup::aggregate_weekly_in(&filtered, tz),
                 Scope::AllTime => {
-                    let window_weekly = rollup::aggregate_weekly(&filtered);
+                    let window_weekly = rollup::aggregate_weekly_in(&filtered, tz);
                     merge_period_summaries(&self.all_time_base_weekly, &window_weekly)
                 }
             };

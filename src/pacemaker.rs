@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 
-use crate::config::BudgetConfig;
+use crate::config::{BudgetConfig, TimezoneMode};
 use crate::timestamp;
 use crate::types::Record;
 
@@ -21,21 +21,25 @@ pub struct BudgetStatus {
     pub monthly: Option<BudgetPeriod>,
 }
 
-/// Evaluate spending against budget limits.
-/// Returns a [`BudgetStatus`] with spending and limits for each configured period.
+/// Evaluate spending against budget limits in UTC.
 pub fn evaluate(entries: &[Record], budget: &BudgetConfig) -> BudgetStatus {
+    evaluate_in(entries, budget, TimezoneMode::Utc)
+}
+
+/// Evaluate spending against budget limits in `tz`.
+pub fn evaluate_in(entries: &[Record], budget: &BudgetConfig, tz: TimezoneMode) -> BudgetStatus {
     let daily = budget.daily.map(|limit| {
-        let spent = sum_cost_since(entries, timestamp::start_of_today());
+        let spent = sum_cost_since(entries, timestamp::today_in(tz), tz);
         BudgetPeriod { spent, limit }
     });
 
     let weekly = budget.weekly.map(|limit| {
-        let spent = sum_cost_since(entries, timestamp::start_of_week());
+        let spent = sum_cost_since(entries, timestamp::start_of_week_in(tz), tz);
         BudgetPeriod { spent, limit }
     });
 
     let monthly = budget.monthly.map(|limit| {
-        let spent = sum_cost_since(entries, timestamp::start_of_month());
+        let spent = sum_cost_since(entries, timestamp::start_of_month_in(tz), tz);
         BudgetPeriod { spent, limit }
     });
 
@@ -46,10 +50,10 @@ pub fn evaluate(entries: &[Record], budget: &BudgetConfig) -> BudgetStatus {
     }
 }
 
-fn sum_cost_since(entries: &[Record], since: NaiveDate) -> f64 {
+fn sum_cost_since(entries: &[Record], since: NaiveDate, tz: TimezoneMode) -> f64 {
     entries
         .iter()
-        .filter(|e| e.timestamp.date_naive() >= since)
+        .filter(|e| timestamp::date_for(e.timestamp, tz) >= since)
         .filter_map(|e| e.cost_usd)
         .sum()
 }
@@ -131,6 +135,9 @@ mod tests {
     fn test_sum_cost_since() {
         let entries = vec![create_dummy_record(1.0, 0), create_dummy_record(2.0, 0)];
         let since_today = timestamp::start_of_today();
-        assert_eq!(sum_cost_since(&entries, since_today), 3.0);
+        assert_eq!(
+            sum_cost_since(&entries, since_today, TimezoneMode::Utc),
+            3.0
+        );
     }
 }

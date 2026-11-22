@@ -8,6 +8,7 @@ use crate::config::Config;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingField {
     TickInterval,
+    Timezone,
     DefaultCommand,
     DefaultFormat,
     Breakdown,
@@ -42,7 +43,7 @@ pub(crate) enum SettingField {
 
 impl SettingField {
     /// Total number of settings fields.
-    pub const COUNT: usize = 31;
+    pub const COUNT: usize = 32;
 
     /// All fields in display order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -55,6 +56,7 @@ impl SettingField {
         Self::Refresh,
         Self::Reparse,
         Self::SortOrder,
+        Self::Timezone,
         Self::ShowSparklines,
         Self::SparklineMetric,
         Self::TodayBucketMins,
@@ -84,6 +86,7 @@ impl SettingField {
     pub fn label(self) -> &'static str {
         match self {
             Self::TickInterval => "Tick Interval (s) *",
+            Self::Timezone => "Timezone",
             Self::DefaultCommand => "Default Command",
             Self::DefaultFormat => "Default Format",
             Self::Breakdown => "Model Breakdown",
@@ -163,7 +166,11 @@ impl SettingField {
     pub fn is_enum(self) -> bool {
         matches!(
             self,
-            Self::DefaultCommand | Self::DefaultFormat | Self::SortOrder | Self::SparklineMetric
+            Self::Timezone
+                | Self::DefaultCommand
+                | Self::DefaultFormat
+                | Self::SortOrder
+                | Self::SparklineMetric
         )
     }
 
@@ -185,6 +192,7 @@ impl SettingField {
                     v.to_string()
                 }
             }
+            Self::Timezone => config.timezone.to_string(),
             Self::DefaultCommand => config.default_command.to_string(),
             Self::DefaultFormat => config.default_format.clone(),
             Self::Breakdown => bool_display(config.breakdown),
@@ -262,6 +270,9 @@ impl SettingField {
     /// Cycle an enum field to its next value. No-op for non-enum fields.
     pub fn cycle_enum(self, config: &mut Config) {
         match self {
+            Self::Timezone => {
+                config.timezone = config.timezone.next();
+            }
             Self::DefaultCommand => {
                 config.default_command = config.default_command.next();
             }

@@ -60,6 +60,47 @@ pub fn format_tokens_short(n: u64) -> String {
     }
 }
 
+/// Compute prompt cache hit percentage:
+/// `cache_read / (input + cache_read + cache_write) * 100.0`.
+/// Returns `None` when total prompt tokens are zero.
+#[must_use]
+pub fn cache_hit_pct(input: u64, cache_read: u64, cache_write: u64) -> Option<f64> {
+    let prompt_total = input.saturating_add(cache_read).saturating_add(cache_write);
+    if prompt_total == 0 {
+        None
+    } else {
+        Some((cache_read as f64 / prompt_total as f64) * 100.0)
+    }
+}
+
+/// Format prompt cache hit percentage for display (e.g. `"91.2%"`, or `"--"`).
+#[must_use]
+pub fn format_cache_hit(input: u64, cache_read: u64, cache_write: u64) -> String {
+    match cache_hit_pct(input, cache_read, cache_write) {
+        Some(pct) => format!("{pct:.1}%"),
+        None => "--".to_string(),
+    }
+}
+
+/// Format prompt cache hit percentage with ANSI color coding for CLI tables.
+#[must_use]
+pub fn format_cache_hit_styled(
+    input: u64,
+    cache_read: u64,
+    cache_write: u64,
+    color: bool,
+) -> String {
+    let s = format_cache_hit(input, cache_read, cache_write);
+    if !color {
+        return s;
+    }
+    match cache_hit_pct(input, cache_read, cache_write) {
+        Some(pct) if pct >= 70.0 => green(&s, true),
+        Some(pct) if pct >= 30.0 => yellow(&s, true),
+        None | Some(_) => dim(&s, true),
+    }
+}
+
 pub fn format_tokens(n: u64) -> String {
     if n == 0 {
         return "0".to_string();
@@ -201,5 +242,14 @@ mod tests {
     fn test_format_tokens_styled_no_color() {
         assert_eq!(format_tokens_styled(0, false), "0");
         assert_eq!(format_tokens_styled(1234, false), "1,234");
+    }
+
+    #[test]
+    fn test_format_cache_hit() {
+        assert_eq!(cache_hit_pct(0, 0, 0), None);
+        assert_eq!(format_cache_hit(0, 0, 0), "--");
+        assert_eq!(format_cache_hit(100, 900, 0), "90.0%");
+        assert_eq!(format_cache_hit(100, 300, 100), "60.0%");
+        assert_eq!(format_cache_hit_styled(100, 900, 0, false), "90.0%");
     }
 }

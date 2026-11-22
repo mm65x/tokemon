@@ -33,6 +33,7 @@ pub(crate) enum SettingField {
     ColOutput,
     ColCacheWrite,
     ColCacheRead,
+    ColCacheHit,
     ColThinking,
     ColRequests,
     ColTotalTokens,
@@ -41,7 +42,7 @@ pub(crate) enum SettingField {
 
 impl SettingField {
     /// Total number of settings fields.
-    pub const COUNT: usize = 30;
+    pub const COUNT: usize = 31;
 
     /// All fields in display order.
     pub const ALL: [Self; Self::COUNT] = [
@@ -71,6 +72,7 @@ impl SettingField {
         Self::ColOutput,
         Self::ColCacheWrite,
         Self::ColCacheRead,
+        Self::ColCacheHit,
         Self::ColThinking,
         Self::ColRequests,
         Self::ColTotalTokens,
@@ -107,6 +109,7 @@ impl SettingField {
             Self::ColOutput => "Output Tokens",
             Self::ColCacheWrite => "Cache Write",
             Self::ColCacheRead => "Cache Read",
+            Self::ColCacheHit => "Cache Hit %",
             Self::ColThinking => "Thinking",
             Self::ColRequests => "Requests",
             Self::ColTotalTokens => "Total Tokens",
@@ -147,6 +150,7 @@ impl SettingField {
                 | Self::ColOutput
                 | Self::ColCacheWrite
                 | Self::ColCacheRead
+                | Self::ColCacheHit
                 | Self::ColThinking
                 | Self::ColRequests
                 | Self::ColTotalTokens
@@ -221,6 +225,7 @@ impl SettingField {
             Self::ColOutput => bool_display(config.columns.output),
             Self::ColCacheWrite => bool_display(config.columns.cache_write),
             Self::ColCacheRead => bool_display(config.columns.cache_read),
+            Self::ColCacheHit => bool_display(config.columns.cache_hit),
             Self::ColThinking => bool_display(config.columns.thinking),
             Self::ColRequests => bool_display(config.columns.requests),
             Self::ColTotalTokens => bool_display(config.columns.total_tokens),
@@ -245,6 +250,7 @@ impl SettingField {
             Self::ColOutput => config.columns.output = !config.columns.output,
             Self::ColCacheWrite => config.columns.cache_write = !config.columns.cache_write,
             Self::ColCacheRead => config.columns.cache_read = !config.columns.cache_read,
+            Self::ColCacheHit => config.columns.cache_hit = !config.columns.cache_hit,
             Self::ColThinking => config.columns.thinking = !config.columns.thinking,
             Self::ColRequests => config.columns.requests = !config.columns.requests,
             Self::ColTotalTokens => config.columns.total_tokens = !config.columns.total_tokens,

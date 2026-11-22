@@ -115,7 +115,7 @@ fn parse_with_cache(
     let providers = resolve_source_refs(registry, &opts.providers)?;
 
     let Some(ref mut cache) = cache else {
-        return Ok(parse_all_directly(&providers));
+        return Ok(parse_all_directly(&providers, opts.since, opts.until));
     };
 
     // Rebuild cached records for any source whose parser output changed since
@@ -245,7 +245,9 @@ fn parse_with_cache(
     };
 
     if !parsed_fallback.is_empty() {
-        entries.extend(parsed_fallback);
+        let filtered_fallback =
+            crate::rollup::filter_by_date(parsed_fallback, opts.since, opts.until);
+        entries.extend(filtered_fallback);
         entries = dedup::deduplicate(entries);
     }
 
@@ -272,7 +274,11 @@ fn resolve_source_refs<'a>(
         .collect()
 }
 
-fn parse_all_directly(providers: &[&dyn source::Source]) -> Vec<types::Record> {
+fn parse_all_directly(
+    providers: &[&dyn source::Source],
+    since: Option<NaiveDate>,
+    until: Option<NaiveDate>,
+) -> Vec<types::Record> {
     let mut entries = Vec::new();
     for provider in providers {
         match provider.parse_all() {
@@ -280,7 +286,7 @@ fn parse_all_directly(providers: &[&dyn source::Source]) -> Vec<types::Record> {
             Err(e) => eprintln!("[tokemon] Warning: {}: {}", provider.name(), e),
         }
     }
-    entries = dedup::deduplicate(entries);
+    let mut entries = dedup::deduplicate(crate::rollup::filter_by_date(entries, since, until));
     entries.sort_by_key(|e| e.timestamp);
     entries
 }

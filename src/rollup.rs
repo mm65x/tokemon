@@ -125,8 +125,13 @@ pub fn aggregate_by_session(entries: &[Record]) -> Vec<SessionSummary> {
         })
         .collect();
 
-    // Sort by cost descending
-    sessions.sort_unstable_by(|a, b| b.cost.total_cmp(&a.cost));
+    // Sort by cost descending, with deterministic tiebreakers for equal/zero cost
+    sessions.sort_unstable_by(|a, b| {
+        b.cost
+            .total_cmp(&a.cost)
+            .then_with(|| b.total_tokens.cmp(&a.total_tokens))
+            .then_with(|| a.session_id.cmp(&b.session_id))
+    });
     sessions
 }
 

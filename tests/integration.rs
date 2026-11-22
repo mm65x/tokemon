@@ -615,3 +615,336 @@ fn test_cli_antigravity_model_from_conversation_db_and_cache_upgrade() {
     );
     assert_eq!(models(&second), vec!["gemini-4-hydrogen"]);
 }
+
+#[test]
+fn test_cli_date_filtering_with_cache_and_fallback_and_config_defaults() {
+    use std::fs;
+    use std::process::Command;
+
+    let sandbox = tempfile::tempdir().expect("create temp sandbox");
+    let home = sandbox.path();
+
+    // Seed two Claude Code entries on different dates (2026-01-10 and 2026-01-20)
+    let session_dir = home.join(".claude/projects/demo");
+    fs::create_dir_all(&session_dir).expect("create session dir");
+    fs::write(
+        session_dir.join("multi.jsonl"),
+        concat!(
+            r#"{"type":"assistant","timestamp":"2026-01-10T12:00:00Z","message":{"id":"m1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":50}}}"#,
+            "\n",
+            r#"{"type":"assistant","timestamp":"2026-01-20T12:00:00Z","message":{"id":"m2","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":100}}}"#,
+            "\n"
+        ),
+    )
+    .expect("write fixture");
+
+    let bin = env!("CARGO_BIN_EXE_tokemon");
+
+    // 1. Date filtering with normal SQLite cache (--since and --until)
+    let out = Command::new(bin)
+        .args([
+            "report",
+            "--offline",
+            "--no-cost",
+            "--json",
+            "--since",
+            "2026-01-15",
+            "--until",
+            "2026-01-25",
+        ])
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon report");
+    assert!(out.status.success());
+    let rep: serde_json::Value = serde_json::from_slice(&out.stdout).expect("parse json");
+    assert_eq!(rep["total_tokens"].as_u64(), Some(300));
+
+    // 2. Date filtering when cache is unavailable (TOKEMON_CACHE_DIR points to a regular file)
+    let bad_cache = home.join("not-a-dir");
+    fs::write(&bad_cache, "block cache dir").expect("write blocker file");
+    let fallback_out = Command::new(bin)
+        .args([
+            "report",
+            "--offline",
+            "--no-cost",
+            "--json",
+            "--since",
+            "2026-01-01",
+            "--until",
+            "2026-01-15",
+        ])
+        .env("TOKEMON_HOME", home)
+        .env("TOKEMON_CACHE_DIR", &bad_cache)
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon report fallback");
+    assert!(fallback_out.status.success());
+    let fb_rep: serde_json::Value =
+        serde_json::from_slice(&fallback_out.stdout).expect("parse fallback json");
+    assert_eq!(fb_rep["total_tokens"].as_u64(), Some(150));
+
+    // 3. Config default_command = "weekly" and default_format = "json" work without CLI flags
+    let cfg_dir = home.join(".config/tokemon");
+    fs::create_dir_all(&cfg_dir).expect("create config dir");
+    fs::write(
+        cfg_dir.join("config.toml"),
+        "default_command = \"weekly\"\ndefault_format = \"json\"\n",
+    )
+    .expect("write config.toml");
+
+    let cfg_out = Command::new(bin)
+        .args(["report", "--offline", "--no-cost"])
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon report with config defaults");
+    assert!(cfg_out.status.success());
+    let cfg_rep: serde_json::Value =
+        serde_json::from_slice(&cfg_out.stdout).expect("parse config-default json");
+    assert_eq!(cfg_rep["period"].as_str(), Some("weekly"));
+    assert_eq!(cfg_rep["total_tokens"].as_u64(), Some(450));
+}
+
+#[test]
+fn test_cli_flags_across_subcommands_date_provider_order_and_mcp() {
+    use std::fs;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let sandbox = tempfile::tempdir().expect("create temp sandbox");
+    let home = sandbox.path();
+
+    // Seed two providers (claude-code and antigravity) across 3 dates,
+    // including entries today so statusline has matching records.
+    let today = chrono::Utc::now().date_naive();
+    let yesterday = today - chrono::Duration::days(1);
+    let older = today - chrono::Duration::days(10);
+
+    let claude_dir = home.join(".claude/projects/demo");
+    fs::create_dir_all(&claude_dir).expect("create claude dir");
+    fs::write(
+        claude_dir.join("sess-a.jsonl"),
+        format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"timestamp\":\"{older}T12:00:00Z\",\"message\":{{\"id\":\"c1\",\"model\":\"claude-sonnet-4-20250514\",\"usage\":{{\"input_tokens\":100,\"output_tokens\":20}}}}}}\n",
+                "{{\"type\":\"assistant\",\"timestamp\":\"{today}T10:00:00Z\",\"message\":{{\"id\":\"c2\",\"model\":\"claude-sonnet-4-20250514\",\"usage\":{{\"input_tokens\":200,\"output_tokens\":40}}}}}}\n",
+            ),
+            older = older,
+            today = today,
+        ),
+    )
+    .expect("write claude fixture");
+
+    let agy_logs = home.join(".gemini/antigravity/brain/sess-b/.system_generated/logs");
+    fs::create_dir_all(&agy_logs).expect("create antigravity dir");
+    fs::write(
+        agy_logs.join("transcript.jsonl"),
+        format!(
+            concat!(
+                "{{\"step_index\":1,\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"{yesterday}T15:00:00Z\",\"input_tokens\":300,\"output_tokens\":50}}\n",
+                "{{\"step_index\":2,\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"{today}T11:00:00Z\",\"input_tokens\":400,\"output_tokens\":60}}\n",
+            ),
+            yesterday = yesterday,
+            today = today,
+        ),
+    )
+    .expect("write antigravity fixture");
+
+    let bin = env!("CARGO_BIN_EXE_tokemon");
+    let run = |args: &[&str]| -> Vec<u8> {
+        let out = Command::new(bin)
+            .args(args)
+            .env("TOKEMON_HOME", home)
+            .env_remove("TOKEMON_CACHE_DIR")
+            .env_remove("TOKEMON_CONFIG_DIR")
+            .output()
+            .expect("run tokemon");
+        assert!(
+            out.status.success(),
+            "tokemon {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out.stdout
+    };
+
+    // 1. report: --since only, --until only, inverted range, -p filter, -o desc
+    let since_only: serde_json::Value = serde_json::from_slice(&run(&[
+        "report",
+        "--offline",
+        "--no-cost",
+        "--json",
+        "--since",
+        &yesterday.to_string(),
+    ]))
+    .unwrap();
+    assert_eq!(since_only["total_tokens"].as_u64(), Some(350 + 240 + 460));
+
+    let until_only: serde_json::Value = serde_json::from_slice(&run(&[
+        "report",
+        "--offline",
+        "--no-cost",
+        "--json",
+        "--until",
+        &yesterday.to_string(),
+    ]))
+    .unwrap();
+    assert_eq!(until_only["total_tokens"].as_u64(), Some(120 + 350));
+
+    let inverted: serde_json::Value = serde_json::from_slice(&run(&[
+        "report",
+        "--offline",
+        "--no-cost",
+        "--json",
+        "--since",
+        &today.to_string(),
+        "--until",
+        &older.to_string(),
+    ]))
+    .unwrap();
+    assert_eq!(inverted["total_tokens"].as_u64(), Some(0));
+
+    let provider_filtered: serde_json::Value = serde_json::from_slice(&run(&[
+        "report",
+        "--offline",
+        "--no-cost",
+        "--json",
+        "-p",
+        "antigravity",
+    ]))
+    .unwrap();
+    assert_eq!(provider_filtered["total_tokens"].as_u64(), Some(350 + 460));
+    assert_eq!(
+        provider_filtered["providers_found"],
+        serde_json::json!(["antigravity"])
+    );
+
+    let desc_rep: serde_json::Value = serde_json::from_slice(&run(&[
+        "report",
+        "--offline",
+        "--no-cost",
+        "--json",
+        "-o",
+        "desc",
+    ]))
+    .unwrap();
+    let desc_dates: Vec<&str> = desc_rep["summaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["date"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        desc_dates,
+        vec![today.to_string(), yesterday.to_string(), older.to_string()]
+    );
+
+    // 2. status: honors --since, --until, -p, and --frequency
+    let status_out: serde_json::Value = serde_json::from_slice(&run(&[
+        "status",
+        "--offline",
+        "--no-cost",
+        "-f",
+        "monthly",
+        "-p",
+        "claude-code",
+        "--since",
+        &today.to_string(),
+        "--until",
+        &today.to_string(),
+    ]))
+    .unwrap();
+    assert_eq!(status_out["scope"]["frequency"].as_str(), Some("monthly"));
+    assert_eq!(status_out["total_tokens"].as_u64(), Some(240));
+    assert_eq!(status_out["providers"], serde_json::json!(["claude-code"]));
+
+    // 3. statusline: --since later than month-start narrows totals, even in fallback mode
+    let bad_cache = home.join("not-a-dir");
+    fs::write(&bad_cache, "block cache").unwrap();
+    let sl_out = Command::new(bin)
+        .args([
+            "statusline",
+            "--offline",
+            "--no-cost",
+            "-f",
+            "monthly",
+            "--since",
+            &today.to_string(),
+        ])
+        .env("TOKEMON_HOME", home)
+        .env("TOKEMON_CACHE_DIR", &bad_cache)
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run statusline fallback");
+    assert!(sl_out.status.success());
+    let sl_text = String::from_utf8_lossy(&sl_out.stdout);
+    assert!(
+        sl_text.contains("700"),
+        "expected today's 700 tokens (240+460) in statusline, got: {sl_text}"
+    );
+
+    // 4. sessions: --since/--until, -p, --top 1, and --csv
+    let sess_json: serde_json::Value = serde_json::from_slice(&run(&[
+        "sessions",
+        "--offline",
+        "--no-cost",
+        "--json",
+        "--since",
+        &today.to_string(),
+        "--top",
+        "1",
+    ]))
+    .unwrap();
+    assert_eq!(sess_json["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(sess_json["total_tokens"].as_u64(), Some(460));
+
+    let sess_csv = String::from_utf8(run(&[
+        "sessions",
+        "--offline",
+        "--no-cost",
+        "--csv",
+        "-p",
+        "claude-code",
+    ]))
+    .unwrap();
+    assert!(sess_csv.contains("sess-a"));
+    assert!(!sess_csv.contains("sess-b"));
+
+    // 5. mcp: get_usage_period honors since/until
+    let mut mcp = Command::new(bin)
+        .args(["mcp", "--offline", "--no-cost"])
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("spawn mcp");
+    {
+        let stdin = mcp.stdin.as_mut().unwrap();
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_usage_period",
+                "arguments": {
+                    "since": yesterday.to_string(),
+                    "until": yesterday.to_string(),
+                    "period": "daily"
+                }
+            }
+        });
+        writeln!(stdin, "{req}").unwrap();
+    }
+    let mcp_out = mcp.wait_with_output().unwrap();
+    assert!(mcp_out.status.success());
+    let mcp_resp: serde_json::Value =
+        serde_json::from_slice(&mcp_out.stdout).expect("parse mcp response");
+    let text = mcp_resp["result"]["content"][0]["text"].as_str().unwrap();
+    let period_rep: serde_json::Value = serde_json::from_str(text).unwrap();
+    assert_eq!(period_rep["total_tokens"].as_u64(), Some(350));
+}

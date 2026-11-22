@@ -33,7 +33,7 @@ mod tui;
 mod types;
 
 use cache::Cache;
-use cli::{Cli, Commands, Frequency, SourceCommands};
+use cli::{Cli, Commands, Frequency, OutputFormat, SourceCommands};
 use config::Config;
 use pipeline::load_and_price;
 use source::{Source, SourceSet};
@@ -59,14 +59,8 @@ fn main() -> anyhow::Result<()> {
         Commands::Prune { before } => cmd_prune(*before),
         Commands::Mcp => mcp::run(&cli, &config),
         Commands::Top { view, interval } => {
-            // CLI --interval overrides config, config overrides hardcoded default
-            let tick = if *interval > 0 {
-                *interval
-            } else {
-                config.tick_interval
-            };
-            let offline = cli.offline || config.offline;
-            tui::run(&config, view, tick, offline)
+            let (effective_config, tick, offline) = resolve_top_config(&cli, &config, *interval);
+            tui::run(&effective_config, view, tick, offline)
         }
     }
 }
@@ -153,6 +147,32 @@ fn frequency_since(freq: Frequency) -> NaiveDate {
     }
 }
 
+/// Resolve effective TUI config, tick interval, and offline mode from CLI + config.
+#[must_use]
+fn resolve_top_config(cli: &Cli, config: &Config, interval: u64) -> (Config, u64, bool) {
+    let mut effective_config = config.clone();
+    if !cli.providers.is_empty() {
+        effective_config.providers.clone_from(&cli.providers);
+    }
+    if cli.no_cost {
+        effective_config.no_cost = true;
+    }
+    if cli.refresh {
+        effective_config.refresh = true;
+    }
+    if cli.reparse {
+        effective_config.reparse = true;
+    }
+    // CLI --interval overrides config, config overrides hardcoded default
+    let tick = if interval > 0 {
+        interval
+    } else {
+        effective_config.tick_interval
+    };
+    let offline = cli.offline || effective_config.offline;
+    (effective_config, tick, offline)
+}
+
 /// Merge two optional dates, taking the later of the two.
 #[must_use]
 fn merge_since(a: Option<NaiveDate>, b: Option<NaiveDate>) -> Option<NaiveDate> {
@@ -165,7 +185,8 @@ fn merge_since(a: Option<NaiveDate>, b: Option<NaiveDate>) -> Option<NaiveDate> 
 // --- Command handlers ---
 
 fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
-    let freq = cli.frequency;
+    let freq = cli.frequency(config);
+    let output_format = cli.output_format(config);
     let period = match freq {
         Frequency::Daily => "daily",
         Frequency::Weekly => "weekly",
@@ -185,20 +206,22 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
             total_cost: 0.0,
             total_tokens: 0,
         };
-        if cli.json {
-            render::print_json(&empty_report);
-        } else if cli.csv {
-            let breakdown = cli.display_mode(config) == cli::DisplayMode::Breakdown;
-            if breakdown {
-                render::print_csv_breakdown(&empty_report);
-            } else {
-                render::print_csv_compact(&empty_report);
+        match output_format {
+            OutputFormat::Json => render::print_json(&empty_report),
+            OutputFormat::Csv => {
+                let breakdown = cli.display_mode(config) == cli::DisplayMode::Breakdown;
+                if breakdown {
+                    render::print_csv_breakdown(&empty_report);
+                } else {
+                    render::print_csv_compact(&empty_report);
+                }
             }
-        } else {
-            println!("No usage data found.");
-            let pipeline_opts = pipeline::PipelineOptions::from_cli_config(cli, config);
-            if pipeline_opts.providers.is_empty() {
-                println!("Run `tokemon discover` to see which providers are available.");
+            OutputFormat::Table => {
+                println!("No usage data found.");
+                let pipeline_opts = pipeline::PipelineOptions::from_cli_config(cli, config);
+                if pipeline_opts.providers.is_empty() {
+                    println!("Run `tokemon discover` to see which providers are available.");
+                }
             }
         }
         return Ok(());
@@ -233,25 +256,27 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         total_tokens,
     };
 
-    if cli.json {
-        render::print_json(&report);
-    } else if cli.csv {
-        let breakdown = cli.display_mode(config) == cli::DisplayMode::Breakdown;
-        if breakdown {
-            render::print_csv_breakdown(&report);
-        } else {
-            render::print_csv_compact(&report);
+    match output_format {
+        OutputFormat::Json => render::print_json(&report),
+        OutputFormat::Csv => {
+            let breakdown = cli.display_mode(config) == cli::DisplayMode::Breakdown;
+            if breakdown {
+                render::print_csv_breakdown(&report);
+            } else {
+                render::print_csv_compact(&report);
+            }
         }
-    } else {
-        let breakdown = cli.display_mode(config) == cli::DisplayMode::Breakdown;
-        render::print_table(&report, breakdown, &config.columns);
+        OutputFormat::Table => {
+            let breakdown = cli.display_mode(config) == cli::DisplayMode::Breakdown;
+            render::print_table(&report, breakdown, &config.columns);
+        }
     }
 
     Ok(())
 }
 
 fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
-    let freq = cli.frequency;
+    let freq = cli.frequency(config);
     let pipeline::LoadedEntries {
         entries,
         pricing_available,
@@ -309,7 +334,7 @@ fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
 }
 
 fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
-    let freq = cli.frequency;
+    let freq = cli.frequency(config);
     let since = frequency_since(freq);
     let effective_since = merge_since(cli.since, Some(since));
     let entries = load_and_price(
@@ -328,7 +353,10 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let mut providers_seen = std::collections::HashSet::new();
     let (total_cost, total_tokens) = entries
         .iter()
-        .filter(|e| e.timestamp.date_naive() >= since)
+        .filter(|e| {
+            let d = e.timestamp.date_naive();
+            effective_since.is_none_or(|s| d >= s) && cli.until.is_none_or(|u| d <= u)
+        })
         .fold((0.0f64, 0u64), |(cost, tokens), e| {
             providers_seen.insert(&*e.provider);
             (cost + e.cost_usd.unwrap_or(0.0), tokens + e.total_tokens())
@@ -378,6 +406,7 @@ fn cmd_budget(cli: &Cli, config: &Config) -> anyhow::Result<()> {
 }
 
 fn cmd_sessions(cli: &Cli, config: &Config, top: usize) -> anyhow::Result<()> {
+    let output_format = cli.output_format(config);
     let entries = load_and_price(
         &pipeline::PipelineOptions::from_cli_config(cli, config),
         false,
@@ -390,12 +419,10 @@ fn cmd_sessions(cli: &Cli, config: &Config, top: usize) -> anyhow::Result<()> {
             total_cost: 0.0,
             total_tokens: 0,
         };
-        if cli.json {
-            render::print_sessions_json(&empty_report);
-        } else if cli.csv {
-            render::print_csv_sessions(&empty_report);
-        } else {
-            println!("No usage data found.");
+        match output_format {
+            OutputFormat::Json => render::print_sessions_json(&empty_report),
+            OutputFormat::Csv => render::print_csv_sessions(&empty_report),
+            OutputFormat::Table => println!("No usage data found."),
         }
         return Ok(());
     }
@@ -413,12 +440,10 @@ fn cmd_sessions(cli: &Cli, config: &Config, top: usize) -> anyhow::Result<()> {
         total_tokens,
     };
 
-    if cli.json {
-        render::print_sessions_json(&report);
-    } else if cli.csv {
-        render::print_csv_sessions(&report);
-    } else {
-        render::print_sessions_table(&report);
+    match output_format {
+        OutputFormat::Json => render::print_sessions_json(&report),
+        OutputFormat::Csv => render::print_csv_sessions(&report),
+        OutputFormat::Table => render::print_sessions_table(&report),
     }
 
     Ok(())
@@ -459,5 +484,55 @@ fn frequency_label(freq: Frequency) -> &'static str {
         Frequency::Daily => "daily",
         Frequency::Weekly => "weekly",
         Frequency::Monthly => "monthly",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_top_config_forwards_global_cli_flags() {
+        let mut config = Config::default();
+        config.tick_interval = 5;
+
+        let cli = Cli::try_parse_from([
+            "tokemon",
+            "-p",
+            "codex",
+            "-p",
+            "antigravity",
+            "--no-cost",
+            "--offline",
+            "--refresh",
+            "--reparse",
+            "top",
+            "--interval",
+            "10",
+        ])
+        .expect("parse top cli");
+
+        let (effective, tick, offline) = resolve_top_config(&cli, &config, 10);
+        assert_eq!(effective.providers, ["codex", "antigravity"]);
+        assert!(effective.no_cost);
+        assert!(effective.refresh);
+        assert!(effective.reparse);
+        assert_eq!(tick, 10);
+        assert!(offline);
+    }
+
+    #[test]
+    fn resolve_top_config_falls_back_to_config_when_flags_omitted() {
+        let mut config = Config::default();
+        config.providers = vec!["gemini".to_string()];
+        config.tick_interval = 7;
+        config.offline = true;
+
+        let cli = Cli::try_parse_from(["tokemon", "top"]).expect("parse top cli");
+        let (effective, tick, offline) = resolve_top_config(&cli, &config, 0);
+        assert_eq!(effective.providers, ["gemini"]);
+        assert!(!effective.no_cost);
+        assert_eq!(tick, 7);
+        assert!(offline);
     }
 }

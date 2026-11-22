@@ -29,8 +29,8 @@ pub struct Cli {
     pub command: Commands,
 
     /// Aggregation frequency: daily, weekly, or monthly
-    #[arg(short = 'f', long, global = true, value_enum, default_value = "daily")]
-    pub frequency: Frequency,
+    #[arg(short = 'f', long, global = true, value_enum)]
+    pub frequency: Option<Frequency>,
 
     /// Output as JSON instead of table
     #[arg(long, global = true)]
@@ -77,7 +77,40 @@ pub struct Cli {
     pub reparse: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Table,
+    Json,
+    Csv,
+}
+
 impl Cli {
+    /// Resolve aggregation frequency from CLI flag and config default.
+    #[must_use]
+    pub fn frequency(&self, config: &crate::config::Config) -> Frequency {
+        self.frequency.unwrap_or(match config.default_command {
+            crate::config::DefaultCommand::Daily => Frequency::Daily,
+            crate::config::DefaultCommand::Weekly => Frequency::Weekly,
+            crate::config::DefaultCommand::Monthly => Frequency::Monthly,
+        })
+    }
+
+    /// Resolve output format from CLI flags and config default.
+    #[must_use]
+    pub fn output_format(&self, config: &crate::config::Config) -> OutputFormat {
+        if self.json {
+            OutputFormat::Json
+        } else if self.csv {
+            OutputFormat::Csv
+        } else {
+            match config.default_format.to_ascii_lowercase().as_str() {
+                "json" => OutputFormat::Json,
+                "csv" => OutputFormat::Csv,
+                _ => OutputFormat::Table,
+            }
+        }
+    }
+
     /// Resolve display mode from CLI flag and config default
     pub fn display_mode(&self, config: &crate::config::Config) -> DisplayMode {
         self.display.unwrap_or({
@@ -165,4 +198,35 @@ pub enum SourceCommands {
         /// TOML definition file to validate
         definition: PathBuf,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{Config, DefaultCommand};
+
+    #[test]
+    fn cli_frequency_falls_back_to_config_default_command() {
+        let mut config = Config::default();
+        config.default_command = DefaultCommand::Weekly;
+
+        let cli = Cli::try_parse_from(["tokemon", "report"]).expect("parse cli");
+        assert_eq!(cli.frequency(&config), Frequency::Weekly);
+
+        let override_cli =
+            Cli::try_parse_from(["tokemon", "report", "-f", "monthly"]).expect("parse cli");
+        assert_eq!(override_cli.frequency(&config), Frequency::Monthly);
+    }
+
+    #[test]
+    fn cli_output_format_falls_back_to_config_default_format() {
+        let mut config = Config::default();
+        config.default_format = "json".to_string();
+
+        let cli = Cli::try_parse_from(["tokemon", "report"]).expect("parse cli");
+        assert_eq!(cli.output_format(&config), OutputFormat::Json);
+
+        let csv_cli = Cli::try_parse_from(["tokemon", "report", "--csv"]).expect("parse cli");
+        assert_eq!(csv_cli.output_format(&config), OutputFormat::Csv);
+    }
 }

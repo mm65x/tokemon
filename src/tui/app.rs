@@ -938,7 +938,8 @@ impl App {
         };
 
         let cache = cache::Cache::open_read_only_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
-        let mut historical = cache.load_entries_filtered(None, Some(cutoff_pred), &[])?;
+        let mut historical =
+            cache.load_entries_filtered(None, Some(cutoff_pred), &self.config.providers)?;
 
         if historical.is_empty() {
             self.all_time_base_cost = 0.0;
@@ -950,8 +951,10 @@ impl App {
         }
 
         // Apply pricing to historical records.
-        if let Some(engine) = self.pricing.as_ref() {
-            engine.apply_costs(&mut historical);
+        if !self.no_cost {
+            if let Some(engine) = self.pricing.as_ref() {
+                engine.apply_costs(&mut historical);
+            }
         }
 
         let all_time_base_cost = historical.iter().map(|r| r.cost_usd.unwrap_or(0.0)).sum();
@@ -986,12 +989,19 @@ impl App {
     /// mtimes are re-parsed, so the cost is negligible when nothing changed.
     fn poll_sources(&mut self) -> crate::error::Result<()> {
         let mut cache = cache::Cache::open_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
-        let cached_mtimes = cache.cached_file_mtimes()?;
+        let providers = self.registry.available();
+        for provider in &providers {
+            let _ = cache.sync_parser_version(provider.name(), provider.parser_version());
+        }
+        let cached_mtimes = if self.config.reparse && !self.initial_load_done {
+            HashMap::new()
+        } else {
+            cache.cached_file_mtimes()?
+        };
 
         // Collect parsed results with owned PathBufs.
         let mut parsed: Vec<(std::path::PathBuf, i64, Vec<crate::types::Record>)> = Vec::new();
         let parse_warning = {
-            let providers = self.registry.available();
             let mut warning = None;
 
             for provider in &providers {
@@ -1043,7 +1053,12 @@ impl App {
     /// in-memory aggregations. File discovery and parsing are handled
     /// by the background watcher thread.
     fn reload_from_cache(&mut self) -> bool {
-        let records = match load_records_from_cache(self.pricing.as_ref()) {
+        let pricing = if self.no_cost {
+            None
+        } else {
+            self.pricing.as_ref()
+        };
+        let records = match load_records_from_cache(pricing, &self.config.providers) {
             Ok(records) => records,
             Err(e) => {
                 self.set_warning(format!("Usage cache unavailable: {e}"));
@@ -1313,9 +1328,9 @@ impl App {
 
     fn recompute_heatmap(&mut self) {
         let since = Utc::now().date_naive() - Duration::days(364);
-        match cache::Cache::open()
-            .and_then(|cache| cache.load_entries_filtered(Some(since), None, &[]))
-        {
+        match cache::Cache::open().and_then(|cache| {
+            cache.load_entries_filtered(Some(since), None, &self.config.providers)
+        }) {
             Ok(records) => {
                 self.heatmap_data = heatmap::build_heatmap_data(&records);
             }
@@ -1376,13 +1391,14 @@ fn sort_models(models: &mut [ModelUsage], order: SortOrder) {
 
 fn load_records_from_cache(
     pricing: Option<&cost::PricingEngine>,
+    providers: &[String],
 ) -> crate::error::Result<Vec<Record>> {
     let c = cache::Cache::open_read_only_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
 
     // Load everything — the TUI filters in memory for card summaries.
     // We load the last ~60 days to keep things bounded.
     let since = Scope::Month.since() - chrono::Duration::days(30);
-    let mut entries = c.load_entries_filtered(Some(since), None, &[])?;
+    let mut entries = c.load_entries_filtered(Some(since), None, providers)?;
 
     // Apply pricing from pre-loaded engine (no disk I/O here).
     if let Some(engine) = pricing {

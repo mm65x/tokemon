@@ -39,9 +39,10 @@ pub fn run(
     tick_interval: u64,
     offline: bool,
 ) -> anyhow::Result<()> {
-    let scope = match initial_view {
+    let scope = match initial_view.to_ascii_lowercase().as_str() {
         "week" | "w" => Scope::Week,
         "month" | "m" => Scope::Month,
+        "all" | "all-time" | "alltime" | "a" => Scope::AllTime,
         _ => Scope::Today,
     };
 

@@ -615,3 +615,95 @@ fn test_cli_antigravity_model_from_conversation_db_and_cache_upgrade() {
     );
     assert_eq!(models(&second), vec!["gemini-4-hydrogen"]);
 }
+
+#[test]
+fn test_cli_date_filtering_with_cache_and_fallback_and_config_defaults() {
+    use std::fs;
+    use std::process::Command;
+
+    let sandbox = tempfile::tempdir().expect("create temp sandbox");
+    let home = sandbox.path();
+
+    // Seed two Claude Code entries on different dates (2026-01-10 and 2026-01-20)
+    let session_dir = home.join(".claude/projects/demo");
+    fs::create_dir_all(&session_dir).expect("create session dir");
+    fs::write(
+        session_dir.join("multi.jsonl"),
+        concat!(
+            r#"{"type":"assistant","timestamp":"2026-01-10T12:00:00Z","message":{"id":"m1","model":"claude-sonnet-4-20250514","usage":{"input_tokens":100,"output_tokens":50}}}"#,
+            "\n",
+            r#"{"type":"assistant","timestamp":"2026-01-20T12:00:00Z","message":{"id":"m2","model":"claude-sonnet-4-20250514","usage":{"input_tokens":200,"output_tokens":100}}}"#,
+            "\n"
+        ),
+    )
+    .expect("write fixture");
+
+    let bin = env!("CARGO_BIN_EXE_tokemon");
+
+    // 1. Date filtering with normal SQLite cache (--since and --until)
+    let out = Command::new(bin)
+        .args([
+            "report",
+            "--offline",
+            "--no-cost",
+            "--json",
+            "--since",
+            "2026-01-15",
+            "--until",
+            "2026-01-25",
+        ])
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon report");
+    assert!(out.status.success());
+    let rep: serde_json::Value = serde_json::from_slice(&out.stdout).expect("parse json");
+    assert_eq!(rep["total_tokens"].as_u64(), Some(300));
+
+    // 2. Date filtering when cache is unavailable (TOKEMON_CACHE_DIR points to a regular file)
+    let bad_cache = home.join("not-a-dir");
+    fs::write(&bad_cache, "block cache dir").expect("write blocker file");
+    let fallback_out = Command::new(bin)
+        .args([
+            "report",
+            "--offline",
+            "--no-cost",
+            "--json",
+            "--since",
+            "2026-01-01",
+            "--until",
+            "2026-01-15",
+        ])
+        .env("TOKEMON_HOME", home)
+        .env("TOKEMON_CACHE_DIR", &bad_cache)
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon report fallback");
+    assert!(fallback_out.status.success());
+    let fb_rep: serde_json::Value =
+        serde_json::from_slice(&fallback_out.stdout).expect("parse fallback json");
+    assert_eq!(fb_rep["total_tokens"].as_u64(), Some(150));
+
+    // 3. Config default_command = "weekly" and default_format = "json" work without CLI flags
+    let cfg_dir = home.join(".config/tokemon");
+    fs::create_dir_all(&cfg_dir).expect("create config dir");
+    fs::write(
+        cfg_dir.join("config.toml"),
+        "default_command = \"weekly\"\ndefault_format = \"json\"\n",
+    )
+    .expect("write config.toml");
+
+    let cfg_out = Command::new(bin)
+        .args(["report", "--offline", "--no-cost"])
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR")
+        .output()
+        .expect("run tokemon report with config defaults");
+    assert!(cfg_out.status.success());
+    let cfg_rep: serde_json::Value =
+        serde_json::from_slice(&cfg_out.stdout).expect("parse config-default json");
+    assert_eq!(cfg_rep["period"].as_str(), Some("weekly"));
+    assert_eq!(cfg_rep["total_tokens"].as_u64(), Some(450));
+}

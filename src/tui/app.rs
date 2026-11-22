@@ -318,6 +318,9 @@ pub struct App {
     /// window). Computed once at startup. When the user views the All Time
     /// scope, these are merged with current-window aggregations.
     all_time_base_models: Vec<ModelUsage>,
+    /// Weekly summaries for historical records (before the in-memory window),
+    /// merged into `history_summaries` when viewing `Scope::AllTime`.
+    all_time_base_weekly: Vec<PeriodSummary>,
 }
 
 impl App {
@@ -397,6 +400,7 @@ impl App {
             all_time_base_sparkline: Vec::new(),
             all_time_base_start_week: None,
             all_time_base_models: Vec::new(),
+            all_time_base_weekly: Vec::new(),
         };
         // Load pricing engine once. Online loading already uses a fresh cache
         // without fetching, and refreshes stale data before falling back to it.
@@ -946,6 +950,7 @@ impl App {
             self.all_time_base_sparkline.clear();
             self.all_time_base_start_week = None;
             self.all_time_base_models.clear();
+            self.all_time_base_weekly.clear();
             return Ok(());
         }
 
@@ -965,15 +970,18 @@ impl App {
         let (all_time_base_sparkline, all_time_base_start_week) =
             build_weekly_sparkline_data(&historical, use_cost);
 
-        // Aggregate into model-level breakdown for the detail table.
+        // Aggregate into model-level breakdown for the detail table, plus weekly
+        // summaries so History mode under All Time includes older periods.
         let summaries = rollup::aggregate_daily(&historical);
         let all_time_base_models = aggregate_summaries_to_models(&summaries, self.group_by);
+        let all_time_base_weekly = rollup::aggregate_weekly(&historical);
 
         self.all_time_base_cost = all_time_base_cost;
         self.all_time_base_tokens = all_time_base_tokens;
         self.all_time_base_sparkline = all_time_base_sparkline;
         self.all_time_base_start_week = all_time_base_start_week;
         self.all_time_base_models = all_time_base_models;
+        self.all_time_base_weekly = all_time_base_weekly;
         Ok(())
     }
 
@@ -1250,15 +1258,10 @@ impl App {
         };
 
         // Apply provider/model filter if set
-        if !self.applied_filter.is_empty() {
-            let filter_lower = self.applied_filter.to_lowercase();
-            models.retain(|m| {
-                m.model.to_lowercase().contains(&filter_lower)
-                    || m.provider.to_lowercase().contains(&filter_lower)
-                    || crate::display::infer_api_provider(&m.model)
-                        .to_lowercase()
-                        .contains(&filter_lower)
-            });
+        let filter_lower =
+            (!self.applied_filter.is_empty()).then(|| self.applied_filter.to_lowercase());
+        if let Some(ref fl) = filter_lower {
+            models.retain(|m| matches_model_filter(m, fl));
         }
 
         // Apply current sort order (stable sort to prevent shuffling of equal rows)
@@ -1282,21 +1285,32 @@ impl App {
         if self.show_history {
             self.history_summaries = match self.scope {
                 Scope::Today | Scope::Week => rollup::aggregate_daily(&filtered),
-                Scope::Month | Scope::AllTime => rollup::aggregate_weekly(&filtered),
+                Scope::Month => rollup::aggregate_weekly(&filtered),
+                Scope::AllTime => {
+                    let window_weekly = rollup::aggregate_weekly(&filtered);
+                    merge_period_summaries(&self.all_time_base_weekly, &window_weekly)
+                }
             };
 
-            // Sort dates descending so newest periods appear at the top
-            self.history_summaries
-                .sort_by_key(|summary| std::cmp::Reverse(summary.date));
-
-            // Regroup and sort models within each period based on current settings
+            // Regroup, filter, and sort models within each period based on current settings
             for summary in &mut self.history_summaries {
                 summary.models = rollup::aggregate_summaries_to_models(
                     std::slice::from_ref(summary),
                     self.group_by,
                 );
+                if let Some(ref fl) = filter_lower {
+                    summary.models.retain(|m| matches_model_filter(m, fl));
+                    recompute_summary_totals(summary);
+                }
                 sort_models(&mut summary.models, self.sort_order);
             }
+            if filter_lower.is_some() {
+                self.history_summaries.retain(|s| !s.models.is_empty());
+            }
+
+            // Sort dates descending so newest periods appear at the top
+            self.history_summaries
+                .sort_by_key(|summary| std::cmp::Reverse(summary.date));
         } else {
             self.history_summaries.clear();
         }
@@ -1342,6 +1356,39 @@ impl App {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+
+fn matches_model_filter(m: &ModelUsage, filter_lower: &str) -> bool {
+    m.model.to_lowercase().contains(filter_lower)
+        || m.provider.to_lowercase().contains(filter_lower)
+        || crate::display::infer_api_provider(m.effective_raw_model())
+            .to_lowercase()
+            .contains(filter_lower)
+}
+
+fn recompute_summary_totals(summary: &mut PeriodSummary) {
+    summary.total_input = summary.models.iter().map(|m| m.input_tokens).sum();
+    summary.total_output = summary.models.iter().map(|m| m.output_tokens).sum();
+    summary.total_thinking = summary.models.iter().map(|m| m.thinking_tokens).sum();
+    summary.total_cost = summary.models.iter().map(|m| m.cost_usd).sum();
+    summary.total_requests = summary.models.iter().map(|m| m.request_count).sum();
+}
+
+/// Merge two sets of period summaries (e.g. historical All Time base + current
+/// in-memory window), combining any overlapping boundary period.
+fn merge_period_summaries(base: &[PeriodSummary], recent: &[PeriodSummary]) -> Vec<PeriodSummary> {
+    let mut by_date: std::collections::BTreeMap<NaiveDate, PeriodSummary> =
+        std::collections::BTreeMap::new();
+    for s in base.iter().chain(recent.iter()) {
+        by_date
+            .entry(s.date)
+            .and_modify(|existing| {
+                existing.models = merge_model_usages(&existing.models, &s.models);
+                recompute_summary_totals(existing);
+            })
+            .or_insert_with(|| s.clone());
+    }
+    by_date.into_values().collect()
+}
 
 fn sort_models(models: &mut [ModelUsage], order: SortOrder) {
     match order {
@@ -1482,5 +1529,77 @@ mod tests {
         assert_eq!(Scope::from_card_toggle_key('t'), None);
         assert_eq!(Scope::from_card_toggle_key('w'), None);
         assert_eq!(Scope::from_card_toggle_key('x'), None);
+    }
+
+    #[test]
+    fn merge_period_summaries_combines_boundary_week_and_keeps_older_weeks() {
+        let old_week = PeriodSummary {
+            date: NaiveDate::from_ymd_opt(2026, 1, 5).expect("valid date"),
+            label: "2026-W02".to_string(),
+            models: vec![ModelUsage {
+                model: "m1".to_string(),
+                provider: "codex".to_string(),
+                input_tokens: 100,
+                request_count: 1,
+                ..Default::default()
+            }],
+            total_input: 100,
+            total_output: 0,
+            total_thinking: 0,
+            total_cost: 0.5,
+            total_requests: 1,
+        };
+        let boundary_base = PeriodSummary {
+            date: NaiveDate::from_ymd_opt(2026, 2, 2).expect("valid date"),
+            label: "2026-W06".to_string(),
+            models: vec![ModelUsage {
+                model: "m1".to_string(),
+                provider: "codex".to_string(),
+                input_tokens: 200,
+                request_count: 2,
+                ..Default::default()
+            }],
+            total_input: 200,
+            total_output: 0,
+            total_thinking: 0,
+            total_cost: 1.0,
+            total_requests: 2,
+        };
+        let boundary_recent = PeriodSummary {
+            date: NaiveDate::from_ymd_opt(2026, 2, 2).expect("valid date"),
+            label: "2026-W06".to_string(),
+            models: vec![ModelUsage {
+                model: "m1".to_string(),
+                provider: "codex".to_string(),
+                input_tokens: 300,
+                request_count: 3,
+                ..Default::default()
+            }],
+            total_input: 300,
+            total_output: 0,
+            total_thinking: 0,
+            total_cost: 1.5,
+            total_requests: 3,
+        };
+
+        let merged = merge_period_summaries(&[old_week, boundary_base], &[boundary_recent]);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].total_input, 100);
+        assert_eq!(merged[1].total_input, 500);
+        assert_eq!(merged[1].total_requests, 5);
+    }
+
+    #[test]
+    fn matches_model_filter_checks_model_provider_and_inferred_api() {
+        let mu = ModelUsage {
+            model: "gemini-4-hydrogen".to_string(),
+            raw_model: "gemini-4-hydrogen".to_string(),
+            provider: "antigravity".to_string(),
+            ..Default::default()
+        };
+        assert!(matches_model_filter(&mu, "hydrogen"));
+        assert!(matches_model_filter(&mu, "antigravity"));
+        assert!(matches_model_filter(&mu, "google"));
+        assert!(!matches_model_filter(&mu, "codex"));
     }
 }

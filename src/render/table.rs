@@ -45,6 +45,8 @@ struct BreakdownCols {
     show_cr: bool,
     show_client: bool,
     show_api: bool,
+    show_total: bool,
+    show_cost: bool,
 }
 
 impl BreakdownCols {
@@ -58,6 +60,8 @@ impl BreakdownCols {
             show_cr: self.show_cr && cfg.cache_read,
             show_client: self.show_client && cfg.client,
             show_api: self.show_api && cfg.api_provider,
+            show_total: self.show_total && cfg.total_tokens,
+            show_cost: self.show_cost && cfg.cost,
         }
     }
 }
@@ -76,6 +80,8 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_cr: true,
             show_client: true,
             show_api: true,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: true,
@@ -84,6 +90,8 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_cr: true,
             show_client: false,
             show_api: true,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: true,
@@ -92,6 +100,8 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_cr: true,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: true,
@@ -100,6 +110,8 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_cr: true,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: true,
@@ -108,6 +120,8 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_cr: false,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: false,
@@ -116,6 +130,8 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_cr: false,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
     ];
 
@@ -139,6 +155,8 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
         show_cr,
         show_client,
         show_api,
+        show_total,
+        show_cost,
     } = cols;
     let mut header: Vec<String> = vec!["Date".into(), "Model".into()];
     if show_api {
@@ -159,8 +177,12 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
     if show_cr {
         header.push("Cache Read".into());
     }
-    header.push("Total Tokens".into());
-    header.push("Cost".into());
+    if show_total {
+        header.push("Total Tokens".into());
+    }
+    if show_cost {
+        header.push("Cost".into());
+    }
     style_header(&mut header, color);
 
     let first_numeric_col = 2 + usize::from(show_api) + usize::from(show_client);
@@ -194,8 +216,12 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
         if show_cr {
             row.push(format_tokens_styled(summary.total_cache_read(), color));
         }
-        row.push(format_tokens_styled(total, color));
-        row.push(format_cost_styled(summary.total_cost, color));
+        if show_total {
+            row.push(format_tokens_styled(total, color));
+        }
+        if show_cost {
+            row.push(format_cost_styled(summary.total_cost, color));
+        }
         bold_row(&mut row, color);
         builder.push_record(row);
 
@@ -240,8 +266,12 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
             if show_cr {
                 row.push(format_tokens_styled(model.cache_read_tokens, color));
             }
-            row.push(format_tokens_styled(model_total, color));
-            row.push(format_cost_styled(model.cost_usd, color));
+            if show_total {
+                row.push(format_tokens_styled(model_total, color));
+            }
+            if show_cost {
+                row.push(format_cost_styled(model.cost_usd, color));
+            }
             builder.push_record(row);
         }
     }
@@ -266,8 +296,12 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
     if show_cr {
         row.push(format_tokens(gcr));
     }
-    row.push(format_tokens(gt));
-    row.push(format_cost(report.total_cost));
+    if show_total {
+        row.push(format_tokens(gt));
+    }
+    if show_cost {
+        row.push(format_cost(report.total_cost));
+    }
     bold_row(&mut row, color);
     builder.push_record(row);
 
@@ -334,6 +368,8 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_cr: true,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: true,
@@ -342,6 +378,8 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_cr: true,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: true,
@@ -350,6 +388,8 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_cr: false,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
         BreakdownCols {
             show_in: false,
@@ -358,6 +398,8 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_cr: false,
             show_client: false,
             show_api: false,
+            show_total: true,
+            show_cost: true,
         },
     ];
 
@@ -379,6 +421,8 @@ fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
         show_out,
         show_cw,
         show_cr,
+        show_total,
+        show_cost,
         ..
     } = cols;
     let mut header: Vec<String> = vec!["Date".into()];
@@ -394,8 +438,12 @@ fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
     if show_cr {
         header.push("Cache Read".into());
     }
-    header.push("Total Tokens".into());
-    header.push("Cost".into());
+    if show_total {
+        header.push("Total Tokens".into());
+    }
+    if show_cost {
+        header.push("Cost".into());
+    }
     style_header(&mut header, color);
 
     let first_numeric_col = 1;
@@ -423,8 +471,12 @@ fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
         if show_cr {
             row.push(format_tokens_styled(summary.total_cache_read(), color));
         }
-        row.push(format_tokens_styled(total, color));
-        row.push(format_cost_styled(summary.total_cost, color));
+        if show_total {
+            row.push(format_tokens_styled(total, color));
+        }
+        if show_cost {
+            row.push(format_cost_styled(summary.total_cost, color));
+        }
         builder.push_record(row);
     }
 
@@ -442,8 +494,12 @@ fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
     if show_cr {
         row.push(format_tokens(gcr));
     }
-    row.push(format_tokens(gt));
-    row.push(format_cost(report.total_cost));
+    if show_total {
+        row.push(format_tokens(gt));
+    }
+    if show_cost {
+        row.push(format_cost(report.total_cost));
+    }
     bold_row(&mut row, color);
     builder.push_record(row);
 
@@ -639,5 +695,66 @@ mod tests {
             "gemini-2.5-flash"
         );
         assert_eq!(display::display_model("openai/gpt-4o"), "gpt-4o");
+    }
+
+    #[test]
+    fn column_config_hides_total_tokens_and_cost_in_cli_tables() {
+        use super::{render_breakdown, render_compact, BreakdownCols};
+        use crate::config::ColumnConfig;
+        use crate::types::{ModelUsage, PeriodSummary, Report};
+        use chrono::{NaiveDate, Utc};
+
+        let report = Report {
+            period: "daily".to_string(),
+            generated_at: Utc::now(),
+            providers_found: vec!["codex".to_string()],
+            summaries: vec![PeriodSummary {
+                date: NaiveDate::from_ymd_opt(2026, 1, 1).expect("valid date"),
+                label: "2026-01-01".to_string(),
+                models: vec![ModelUsage {
+                    model: "gpt-5".to_string(),
+                    provider: "codex".to_string(),
+                    input_tokens: 100,
+                    output_tokens: 50,
+                    cost_usd: 1.25,
+                    request_count: 1,
+                    ..Default::default()
+                }],
+                total_input: 100,
+                total_output: 50,
+                total_thinking: 0,
+                total_cost: 1.25,
+                total_requests: 1,
+            }],
+            total_cost: 1.25,
+            total_tokens: 150,
+        };
+
+        let cfg = ColumnConfig {
+            total_tokens: false,
+            cost: false,
+            ..ColumnConfig::default()
+        };
+        let cols = BreakdownCols {
+            show_in: true,
+            show_out: true,
+            show_cw: false,
+            show_cr: false,
+            show_client: false,
+            show_api: false,
+            show_total: true,
+            show_cost: true,
+        }
+        .mask(&cfg);
+
+        let compact = render_compact(&report, false, cols);
+        assert!(compact.contains("Input"));
+        assert!(!compact.contains("Total Tokens"));
+        assert!(!compact.contains("Cost"));
+
+        let breakdown = render_breakdown(&report, false, cols);
+        assert!(breakdown.contains("Input"));
+        assert!(!breakdown.contains("Total Tokens"));
+        assert!(!breakdown.contains("Cost"));
     }
 }

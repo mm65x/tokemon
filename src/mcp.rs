@@ -253,6 +253,12 @@ fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String,
     .map_err(|e| e.to_string())?;
 
     let entries = rollup::filter_by_date(entries, since, until);
+    let providers_found: Vec<String> = entries
+        .iter()
+        .map(|e| e.provider.to_string())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
 
     let period = args
         .get("period")
@@ -271,7 +277,7 @@ fn tool_usage_period(cli: &Cli, config: &Config, args: &Value) -> Result<String,
     let report = crate::types::Report {
         period: period.to_string(),
         generated_at: chrono::Utc::now(),
-        providers_found: Vec::new(),
+        providers_found,
         summaries,
         total_cost,
         total_tokens,

@@ -7,8 +7,9 @@ use crate::display;
 use crate::types::{Report, SessionReport};
 
 use super::helpers::{
-    bold_row, display_width, format_cost, format_cost_styled, format_tokens, format_tokens_short,
-    format_tokens_styled, style_header, terminal_width, use_color,
+    bold_row, display_width, format_cache_hit, format_cache_hit_styled, format_cost,
+    format_cost_styled, format_tokens, format_tokens_short, format_tokens_styled, style_header,
+    terminal_width, use_color,
 };
 
 #[derive(Tabled)]
@@ -43,6 +44,7 @@ struct BreakdownCols {
     show_out: bool,
     show_cw: bool,
     show_cr: bool,
+    show_cache_hit: bool,
     show_client: bool,
     show_api: bool,
     show_total: bool,
@@ -58,6 +60,7 @@ impl BreakdownCols {
             show_out: self.show_out && cfg.output,
             show_cw: self.show_cw && cfg.cache_write,
             show_cr: self.show_cr && cfg.cache_read,
+            show_cache_hit: self.show_cache_hit && cfg.cache_hit,
             show_client: self.show_client && cfg.client,
             show_api: self.show_api && cfg.api_provider,
             show_total: self.show_total && cfg.total_tokens,
@@ -78,6 +81,7 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_out: true,
             show_cw: true,
             show_cr: true,
+            show_cache_hit: true,
             show_client: true,
             show_api: true,
             show_total: true,
@@ -88,6 +92,7 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_out: true,
             show_cw: true,
             show_cr: true,
+            show_cache_hit: true,
             show_client: false,
             show_api: true,
             show_total: true,
@@ -98,6 +103,7 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_out: true,
             show_cw: true,
             show_cr: true,
+            show_cache_hit: true,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -108,6 +114,7 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_out: true,
             show_cw: false,
             show_cr: true,
+            show_cache_hit: false,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -118,6 +125,7 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_out: true,
             show_cw: false,
             show_cr: false,
+            show_cache_hit: false,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -128,6 +136,7 @@ fn print_breakdown_table(report: &Report, col_cfg: &crate::config::ColumnConfig)
             show_out: false,
             show_cw: false,
             show_cr: false,
+            show_cache_hit: false,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -153,6 +162,7 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
         show_out,
         show_cw,
         show_cr,
+        show_cache_hit,
         show_client,
         show_api,
         show_total,
@@ -176,6 +186,9 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
     }
     if show_cr {
         header.push("Cache Read".into());
+    }
+    if show_cache_hit {
+        header.push("Cache %".into());
     }
     if show_total {
         header.push("Total Tokens".into());
@@ -215,6 +228,14 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
         }
         if show_cr {
             row.push(format_tokens_styled(summary.total_cache_read(), color));
+        }
+        if show_cache_hit {
+            row.push(format_cache_hit_styled(
+                summary.total_input,
+                summary.total_cache_read(),
+                summary.total_cache_creation(),
+                color,
+            ));
         }
         if show_total {
             row.push(format_tokens_styled(total, color));
@@ -266,6 +287,14 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
             if show_cr {
                 row.push(format_tokens_styled(model.cache_read_tokens, color));
             }
+            if show_cache_hit {
+                row.push(format_cache_hit_styled(
+                    model.input_tokens,
+                    model.cache_read_tokens,
+                    model.cache_creation_tokens,
+                    color,
+                ));
+            }
             if show_total {
                 row.push(format_tokens_styled(model_total, color));
             }
@@ -295,6 +324,9 @@ fn render_breakdown(report: &Report, color: bool, cols: BreakdownCols) -> String
     }
     if show_cr {
         row.push(format_tokens(gcr));
+    }
+    if show_cache_hit {
+        row.push(format_cache_hit(gi, gcr, gcw));
     }
     if show_total {
         row.push(format_tokens(gt));
@@ -366,6 +398,7 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_out: true,
             show_cw: true,
             show_cr: true,
+            show_cache_hit: true,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -376,6 +409,7 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_out: true,
             show_cw: false,
             show_cr: true,
+            show_cache_hit: false,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -386,6 +420,7 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_out: true,
             show_cw: false,
             show_cr: false,
+            show_cache_hit: false,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -396,6 +431,7 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
             show_out: false,
             show_cw: false,
             show_cr: false,
+            show_cache_hit: false,
             show_client: false,
             show_api: false,
             show_total: true,
@@ -414,13 +450,14 @@ fn print_compact_table(report: &Report, col_cfg: &crate::config::ColumnConfig) {
     }
 }
 
-#[allow(clippy::similar_names)]
+#[allow(clippy::similar_names, clippy::too_many_lines)]
 fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
     let BreakdownCols {
         show_in,
         show_out,
         show_cw,
         show_cr,
+        show_cache_hit,
         show_total,
         show_cost,
         ..
@@ -437,6 +474,9 @@ fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
     }
     if show_cr {
         header.push("Cache Read".into());
+    }
+    if show_cache_hit {
+        header.push("Cache %".into());
     }
     if show_total {
         header.push("Total Tokens".into());
@@ -471,6 +511,14 @@ fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
         if show_cr {
             row.push(format_tokens_styled(summary.total_cache_read(), color));
         }
+        if show_cache_hit {
+            row.push(format_cache_hit_styled(
+                summary.total_input,
+                summary.total_cache_read(),
+                summary.total_cache_creation(),
+                color,
+            ));
+        }
         if show_total {
             row.push(format_tokens_styled(total, color));
         }
@@ -493,6 +541,9 @@ fn render_compact(report: &Report, color: bool, cols: BreakdownCols) -> String {
     }
     if show_cr {
         row.push(format_tokens(gcr));
+    }
+    if show_cache_hit {
+        row.push(format_cache_hit(gi, gcr, gcw));
     }
     if show_total {
         row.push(format_tokens(gt));
@@ -740,6 +791,7 @@ mod tests {
             show_out: true,
             show_cw: false,
             show_cr: false,
+            show_cache_hit: false,
             show_client: false,
             show_api: false,
             show_total: true,

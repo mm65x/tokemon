@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use crate::config::ColumnConfig;
 use crate::display;
-use crate::render::{format_cost, format_tokens_short};
+use crate::render::{format_cache_hit, format_cost, format_tokens_short};
 use crate::tui::app::{App, HoverTarget};
 use crate::tui::diff::RowKey;
 use crate::tui::theme;
@@ -307,6 +307,7 @@ struct ColumnSet {
     show_output: bool,
     show_cache_read: bool,
     show_cache_write: bool,
+    show_cache_hit: bool,
     show_thinking: bool,
     show_requests: bool,
     show_total: bool,
@@ -325,6 +326,7 @@ impl ColumnSet {
             show_output: self.show_output && cfg.output,
             show_cache_read: self.show_cache_read && cfg.cache_read,
             show_cache_write: self.show_cache_write && cfg.cache_write,
+            show_cache_hit: self.show_cache_hit && cfg.cache_hit,
             show_thinking: self.show_thinking && cfg.thinking,
             show_total: self.show_total && cfg.total_tokens,
             show_cost: self.show_cost && cfg.cost,
@@ -353,6 +355,9 @@ impl ColumnSet {
         }
         if self.show_cache_write {
             h.push("C.Write".to_string());
+        }
+        if self.show_cache_hit {
+            h.push("Cache%".to_string());
         }
         if self.show_thinking {
             h.push("Think".to_string());
@@ -388,6 +393,9 @@ impl ColumnSet {
         }
         if self.show_cache_write {
             w.push(Constraint::Length(8));
+        }
+        if self.show_cache_hit {
+            w.push(Constraint::Length(7));
         }
         if self.show_thinking {
             w.push(Constraint::Length(8));
@@ -490,6 +498,11 @@ impl ColumnSet {
             let style = apply_highlight(normal_style, highlight_intensity);
             cells.push(Cell::from(Span::styled(s, style)));
         }
+        if self.show_cache_hit {
+            let s = format_cache_hit(input, cache_read, cache_write);
+            let style = apply_highlight(base_style, highlight_intensity);
+            cells.push(Cell::from(Span::styled(s, style)));
+        }
         if self.show_thinking {
             let s = format_tokens_short(thinking);
             let normal_style = if use_color {
@@ -576,6 +589,12 @@ impl ColumnSet {
                 style,
             )));
         }
+        if self.show_cache_hit {
+            cells.push(Cell::from(Span::styled(
+                format_cache_hit(total_input, total_cache_read, total_cache_write),
+                style,
+            )));
+        }
         if self.show_thinking {
             cells.push(Cell::from(Span::styled(
                 format_tokens_short(total_thinking),
@@ -597,8 +616,8 @@ impl ColumnSet {
 
 /// Choose which columns to display based on terminal width.
 fn choose_columns(width: usize) -> ColumnSet {
-    if width >= 110 {
-        // All columns including cache and thinking
+    if width >= 118 {
+        // All columns including cache, cache hit %, and thinking
         ColumnSet {
             show_api: true,
             show_client: true,
@@ -607,7 +626,22 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_output: true,
             show_cache_read: true,
             show_cache_write: true,
+            show_cache_hit: true,
             show_thinking: true,
+            show_total: true,
+            show_cost: true,
+        }
+    } else if width >= 94 {
+        ColumnSet {
+            show_api: true,
+            show_client: true,
+            show_requests: true,
+            show_input: true,
+            show_output: true,
+            show_cache_read: false,
+            show_cache_write: false,
+            show_cache_hit: true,
+            show_thinking: false,
             show_total: true,
             show_cost: true,
         }
@@ -620,6 +654,7 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_output: true,
             show_cache_read: false,
             show_cache_write: false,
+            show_cache_hit: false,
             show_thinking: false,
             show_total: true,
             show_cost: true,
@@ -633,6 +668,7 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_output: true,
             show_cache_read: false,
             show_cache_write: false,
+            show_cache_hit: false,
             show_thinking: false,
             show_total: true,
             show_cost: true,
@@ -646,6 +682,7 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_output: true,
             show_cache_read: false,
             show_cache_write: false,
+            show_cache_hit: false,
             show_thinking: false,
             show_total: true,
             show_cost: true,
@@ -659,6 +696,7 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_output: false,
             show_cache_read: false,
             show_cache_write: false,
+            show_cache_hit: false,
             show_thinking: false,
             show_total: true,
             show_cost: true,
@@ -672,6 +710,7 @@ fn choose_columns(width: usize) -> ColumnSet {
             show_output: false,
             show_cache_read: false,
             show_cache_write: false,
+            show_cache_hit: false,
             show_thinking: false,
             show_total: true,
             show_cost: true,
@@ -715,7 +754,7 @@ mod tests {
 
         assert_eq!(
             columns.headers(),
-            ["Model", "API", "Client", "Input", "Output"]
+            ["Model", "API", "Client", "Input", "Output", "Cache%"]
         );
         assert_eq!(columns.headers().len(), columns.widths().len());
     }
@@ -767,8 +806,8 @@ mod tests {
         assert_eq!(
             columns.headers(),
             [
-                "Model", "API", "Client", "Reqs", "Input", "Output", "C.Read", "C.Write", "Think",
-                "Total", "Cost"
+                "Model", "API", "Client", "Reqs", "Input", "Output", "C.Read", "C.Write", "Cache%",
+                "Think", "Total", "Cost"
             ]
         );
         assert_eq!(columns.headers().len(), columns.widths().len());

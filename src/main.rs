@@ -59,26 +59,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Prune { before } => cmd_prune(*before),
         Commands::Mcp => mcp::run(&cli, &config),
         Commands::Top { view, interval } => {
-            let mut effective_config = config.clone();
-            if !cli.providers.is_empty() {
-                effective_config.providers.clone_from(&cli.providers);
-            }
-            if cli.no_cost {
-                effective_config.no_cost = true;
-            }
-            if cli.refresh {
-                effective_config.refresh = true;
-            }
-            if cli.reparse {
-                effective_config.reparse = true;
-            }
-            // CLI --interval overrides config, config overrides hardcoded default
-            let tick = if *interval > 0 {
-                *interval
-            } else {
-                effective_config.tick_interval
-            };
-            let offline = cli.offline || effective_config.offline;
+            let (effective_config, tick, offline) = resolve_top_config(&cli, &config, *interval);
             tui::run(&effective_config, view, tick, offline)
         }
     }
@@ -164,6 +145,32 @@ fn frequency_since(freq: Frequency) -> NaiveDate {
         Frequency::Weekly => timestamp::start_of_week(),
         Frequency::Monthly => timestamp::start_of_month(),
     }
+}
+
+/// Resolve effective TUI config, tick interval, and offline mode from CLI + config.
+#[must_use]
+fn resolve_top_config(cli: &Cli, config: &Config, interval: u64) -> (Config, u64, bool) {
+    let mut effective_config = config.clone();
+    if !cli.providers.is_empty() {
+        effective_config.providers.clone_from(&cli.providers);
+    }
+    if cli.no_cost {
+        effective_config.no_cost = true;
+    }
+    if cli.refresh {
+        effective_config.refresh = true;
+    }
+    if cli.reparse {
+        effective_config.reparse = true;
+    }
+    // CLI --interval overrides config, config overrides hardcoded default
+    let tick = if interval > 0 {
+        interval
+    } else {
+        effective_config.tick_interval
+    };
+    let offline = cli.offline || effective_config.offline;
+    (effective_config, tick, offline)
 }
 
 /// Merge two optional dates, taking the later of the two.
@@ -477,5 +484,55 @@ fn frequency_label(freq: Frequency) -> &'static str {
         Frequency::Daily => "daily",
         Frequency::Weekly => "weekly",
         Frequency::Monthly => "monthly",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_top_config_forwards_global_cli_flags() {
+        let mut config = Config::default();
+        config.tick_interval = 5;
+
+        let cli = Cli::try_parse_from([
+            "tokemon",
+            "-p",
+            "codex",
+            "-p",
+            "antigravity",
+            "--no-cost",
+            "--offline",
+            "--refresh",
+            "--reparse",
+            "top",
+            "--interval",
+            "10",
+        ])
+        .expect("parse top cli");
+
+        let (effective, tick, offline) = resolve_top_config(&cli, &config, 10);
+        assert_eq!(effective.providers, ["codex", "antigravity"]);
+        assert!(effective.no_cost);
+        assert!(effective.refresh);
+        assert!(effective.reparse);
+        assert_eq!(tick, 10);
+        assert!(offline);
+    }
+
+    #[test]
+    fn resolve_top_config_falls_back_to_config_when_flags_omitted() {
+        let mut config = Config::default();
+        config.providers = vec!["gemini".to_string()];
+        config.tick_interval = 7;
+        config.offline = true;
+
+        let cli = Cli::try_parse_from(["tokemon", "top"]).expect("parse top cli");
+        let (effective, tick, offline) = resolve_top_config(&cli, &config, 0);
+        assert_eq!(effective.providers, ["gemini"]);
+        assert!(!effective.no_cost);
+        assert_eq!(tick, 7);
+        assert!(offline);
     }
 }

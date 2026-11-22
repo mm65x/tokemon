@@ -39,12 +39,7 @@ pub fn run(
     tick_interval: u64,
     offline: bool,
 ) -> anyhow::Result<()> {
-    let scope = match initial_view.to_ascii_lowercase().as_str() {
-        "week" | "w" => Scope::Week,
-        "month" | "m" => Scope::Month,
-        "all" | "all-time" | "alltime" | "a" => Scope::AllTime,
-        _ => Scope::Today,
-    };
+    let scope = parse_scope(initial_view);
 
     let tick_secs = if tick_interval == 0 {
         DEFAULT_TICK_SECS
@@ -151,4 +146,32 @@ async fn run_async(
     }
 
     Ok(terminal.finish()?)
+}
+
+fn parse_scope(initial_view: &str) -> Scope {
+    match initial_view.to_ascii_lowercase().as_str() {
+        "week" | "w" => Scope::Week,
+        "month" | "m" => Scope::Month,
+        "all" | "all-time" | "alltime" | "a" => Scope::AllTime,
+        _ => Scope::Today,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_scope_handles_all_views_and_aliases() {
+        assert_eq!(parse_scope("today"), Scope::Today);
+        assert_eq!(parse_scope("week"), Scope::Week);
+        assert_eq!(parse_scope("w"), Scope::Week);
+        assert_eq!(parse_scope("MONTH"), Scope::Month);
+        assert_eq!(parse_scope("m"), Scope::Month);
+        assert_eq!(parse_scope("all"), Scope::AllTime);
+        assert_eq!(parse_scope("all-time"), Scope::AllTime);
+        assert_eq!(parse_scope("alltime"), Scope::AllTime);
+        assert_eq!(parse_scope("A"), Scope::AllTime);
+        assert_eq!(parse_scope("unknown"), Scope::Today);
+    }
 }

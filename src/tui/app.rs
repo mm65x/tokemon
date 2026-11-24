@@ -9,7 +9,7 @@ use ratatui::layout::Rect;
 use crate::config::Config;
 use crate::render::{self, format_tokens_short};
 use crate::source::SourceSet;
-use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record};
+use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record, SessionSummary};
 use crate::{cache, cost, dedup, rollup};
 
 use super::diff::{self, RowKey};
@@ -231,6 +231,8 @@ pub struct App {
     pub group_by: GroupBy,
     /// Whether history mode is toggled on.
     pub show_history: bool,
+    /// Whether sessions mode is toggled on.
+    pub show_sessions: bool,
     /// Summary cards: Today, This Week, This Month, All Time.
     pub cards: [CardData; 4],
     /// Which summary cards are visible for this TUI session.
@@ -248,6 +250,8 @@ pub struct App {
     pub detail_total_thinking: u64,
     /// Historical summaries (populated when `show_history` is true).
     pub history_summaries: Vec<PeriodSummary>,
+    /// Session summaries (populated when `show_sessions` is true).
+    pub detail_sessions: Vec<SessionSummary>,
     /// Scroll offset for the detail table.
     pub scroll_offset: u16,
     /// Whether the app should quit.
@@ -330,6 +334,7 @@ impl App {
             scope: initial_scope,
             group_by: GroupBy::ModelClient,
             show_history: false,
+            show_sessions: false,
             cards: [
                 CardData {
                     label: "Today",
@@ -371,6 +376,7 @@ impl App {
             detail_total_cache_write: 0,
             detail_total_thinking: 0,
             history_summaries: Vec::new(),
+            detail_sessions: Vec::new(),
             scroll_offset: 0,
             should_quit: false,
             show_help: false,
@@ -697,6 +703,19 @@ impl App {
             }
             KeyCode::Char('h') => {
                 self.show_history = !self.show_history;
+                if self.show_history {
+                    self.show_sessions = false;
+                }
+                self.scroll_offset = 0;
+                self.recompute_detail();
+                true
+            }
+            KeyCode::Char('e') => {
+                self.show_sessions = !self.show_sessions;
+                if self.show_sessions {
+                    self.show_history = false;
+                }
+                self.scroll_offset = 0;
                 self.recompute_detail();
                 true
             }
@@ -1155,7 +1174,9 @@ impl App {
         table_row_count(
             &self.detail_models,
             &self.history_summaries,
+            &self.detail_sessions,
             self.show_history,
+            self.show_sessions,
         )
     }
 
@@ -1333,6 +1354,26 @@ impl App {
         } else {
             self.history_summaries.clear();
         }
+
+        if self.show_sessions {
+            let mut sessions = rollup::aggregate_by_session_in(&filtered, tz);
+            if let Some(ref fl) = filter_lower {
+                sessions.retain(|s| matches_session_filter(s, fl));
+            }
+            sort_sessions(&mut sessions, self.sort_order);
+
+            self.detail_total_cost = sessions.iter().map(|s| s.cost).sum();
+            self.detail_total_tokens = sessions.iter().map(|s| s.total_tokens).sum();
+            self.detail_total_requests = 0;
+            self.detail_total_input = sessions.iter().map(|s| s.input_tokens).sum();
+            self.detail_total_output = sessions.iter().map(|s| s.output_tokens).sum();
+            self.detail_total_cache_read = sessions.iter().map(|s| s.cache_read_tokens).sum();
+            self.detail_total_cache_write = sessions.iter().map(|s| s.cache_creation_tokens).sum();
+            self.detail_total_thinking = sessions.iter().map(|s| s.thinking_tokens).sum();
+            self.detail_sessions = sessions;
+        } else {
+            self.detail_sessions.clear();
+        }
     }
 
     fn refresh_active_visual(&mut self) {
@@ -1382,6 +1423,49 @@ fn matches_model_filter(m: &ModelUsage, filter_lower: &str) -> bool {
         || crate::display::infer_api_provider(m.effective_raw_model())
             .to_lowercase()
             .contains(filter_lower)
+}
+
+fn matches_session_filter(s: &SessionSummary, filter_lower: &str) -> bool {
+    s.session_id.to_lowercase().contains(filter_lower)
+        || s.client.to_lowercase().contains(filter_lower)
+        || crate::display::display_client(&s.client)
+            .to_lowercase()
+            .contains(filter_lower)
+        || s.dominant_model.to_lowercase().contains(filter_lower)
+        || crate::display::display_model(&s.dominant_model)
+            .to_lowercase()
+            .contains(filter_lower)
+}
+
+fn sort_sessions(sessions: &mut [SessionSummary], order: SortOrder) {
+    match order {
+        SortOrder::CostDesc => {
+            sessions.sort_by(|a, b| {
+                b.cost
+                    .total_cmp(&a.cost)
+                    .then_with(|| b.total_tokens.cmp(&a.total_tokens))
+                    .then_with(|| a.session_id.cmp(&b.session_id))
+            });
+        }
+        SortOrder::TokensDesc => {
+            sessions.sort_by(|a, b| {
+                b.total_tokens
+                    .cmp(&a.total_tokens)
+                    .then_with(|| a.session_id.cmp(&b.session_id))
+            });
+        }
+        SortOrder::NameAsc => {
+            sessions.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+        }
+        SortOrder::RequestsDesc => {
+            sessions.sort_by(|a, b| {
+                b.date
+                    .cmp(&a.date)
+                    .then_with(|| b.cost.total_cmp(&a.cost))
+                    .then_with(|| a.session_id.cmp(&b.session_id))
+            });
+        }
+    }
 }
 
 fn recompute_summary_totals(summary: &mut PeriodSummary) {
@@ -1465,9 +1549,13 @@ fn load_records_from_cache(
 fn table_row_count(
     detail_models: &[ModelUsage],
     history_summaries: &[PeriodSummary],
+    detail_sessions: &[SessionSummary],
     show_history: bool,
+    show_sessions: bool,
 ) -> usize {
-    let data_rows = if show_history && !history_summaries.is_empty() {
+    let data_rows = if show_sessions && !detail_sessions.is_empty() {
+        detail_sessions.len()
+    } else if show_history && !history_summaries.is_empty() {
         history_summaries
             .iter()
             .map(|summary| 1usize.saturating_add(summary.models.len()))
@@ -1498,14 +1586,54 @@ mod tests {
     #[test]
     fn table_row_count_includes_history_headers_models_and_total() {
         let history = vec![summary(2), summary(3)];
-        assert_eq!(table_row_count(&[], &history, true), 8);
+        assert_eq!(table_row_count(&[], &history, &[], true, false), 8);
     }
 
     #[test]
     fn table_row_count_uses_detail_rows_outside_history_mode() {
         let details = vec![ModelUsage::default(); 4];
         let history = vec![summary(2)];
-        assert_eq!(table_row_count(&details, &history, false), 5);
+        assert_eq!(table_row_count(&details, &history, &[], false, false), 5);
+    }
+
+    #[test]
+    fn table_row_count_uses_session_rows_in_sessions_mode() {
+        let details = vec![ModelUsage::default(); 4];
+        let sessions = vec![
+            SessionSummary {
+                session_id: "s1".to_string(),
+                date: NaiveDate::from_ymd_opt(2026, 6, 1).expect("valid date"),
+                client: "claude-code".to_string(),
+                dominant_model: "claude-sonnet-4-6".to_string(),
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                thinking_tokens: 0,
+                total_tokens: 15,
+                cost: 0.01,
+            },
+            SessionSummary {
+                session_id: "s2".to_string(),
+                date: NaiveDate::from_ymd_opt(2026, 6, 2).expect("valid date"),
+                client: "codex".to_string(),
+                dominant_model: "gpt-5".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                thinking_tokens: 0,
+                total_tokens: 30,
+                cost: 0.02,
+            },
+        ];
+        assert_eq!(table_row_count(&details, &[], &sessions, false, true), 3);
+
+        let mut sorted = sessions;
+        sort_sessions(&mut sorted, SortOrder::CostDesc);
+        assert_eq!(sorted[0].session_id, "s2");
+        assert!(matches_session_filter(&sorted[0], "codex"));
+        assert!(!matches_session_filter(&sorted[0], "claude"));
     }
 
     #[test]

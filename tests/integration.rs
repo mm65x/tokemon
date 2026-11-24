@@ -948,3 +948,68 @@ fn test_cli_flags_across_subcommands_date_provider_order_and_mcp() {
     let period_rep: serde_json::Value = serde_json::from_str(text).unwrap();
     assert_eq!(period_rep["total_tokens"].as_u64(), Some(350));
 }
+
+#[test]
+fn timezone_local_config_works_end_to_end() {
+    use std::fs;
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    let dir = TempDir::new().unwrap();
+    let home = dir.path();
+
+    let cfg_dir = home.join(".config/tokemon");
+    fs::create_dir_all(&cfg_dir).unwrap();
+    fs::write(cfg_dir.join("config.toml"), "timezone = \"local\"\n").unwrap();
+
+    let claude_dir = home.join(".claude/projects/tz-test");
+    fs::create_dir_all(&claude_dir).unwrap();
+    // 23:30 UTC on 2026-06-15 is 08:30 on 2026-06-16 in Asia/Tokyo (UTC+9).
+    let line = serde_json::json!({
+        "type": "assistant",
+        "timestamp": "2026-06-15T23:30:00Z",
+        "sessionId": "tz-sess",
+        "message": {
+            "id": "msg-tz-1",
+            "model": "claude-sonnet-4-6",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50
+            }
+        }
+    });
+    fs::write(claude_dir.join("session.jsonl"), format!("{line}\n")).unwrap();
+
+    let bin = env!("CARGO_BIN_EXE_tokemon");
+    let mut cmd = Command::new(bin);
+    cmd.args(["report", "--offline", "--no-cost", "--json"])
+        .env("TOKEMON_HOME", home)
+        .env_remove("TOKEMON_CACHE_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR");
+    // Windows ignores POSIX TZ in chrono::Local (it reads the OS timezone).
+    #[cfg(unix)]
+    cmd.env("TZ", "Asia/Tokyo");
+    let out = cmd
+        .output()
+        .expect("run tokemon report with local timezone");
+    assert!(
+        out.status.success(),
+        "report failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let rep: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let expected_date = if cfg!(unix) {
+        "2026-06-16".to_string()
+    } else {
+        chrono::DateTime::parse_from_rfc3339("2026-06-15T23:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .date_naive()
+            .to_string()
+    };
+    assert_eq!(
+        rep["summaries"][0]["date"].as_str(),
+        Some(expected_date.as_str())
+    );
+    assert_eq!(rep["total_tokens"].as_u64(), Some(150));
+}

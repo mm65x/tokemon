@@ -95,6 +95,35 @@ impl std::fmt::Display for SparklineMetric {
     }
 }
 
+/// Timezone used for calendar-day, week, and month boundaries.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimezoneMode {
+    #[default]
+    Utc,
+    Local,
+}
+
+impl TimezoneMode {
+    /// Cycle to the next value (used by the TUI settings editor).
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::Utc => Self::Local,
+            Self::Local => Self::Utc,
+        }
+    }
+}
+
+impl std::fmt::Display for TimezoneMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Utc => f.write_str("utc"),
+            Self::Local => f.write_str("local"),
+        }
+    }
+}
+
 /// User configuration for tokemon
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -134,6 +163,9 @@ pub struct Config {
 
     /// Polling interval for `tokemon top` in seconds (0 = use default of 2s)
     pub tick_interval: u64,
+
+    /// Calendar-day timezone for aggregation and date filtering ("utc" or "local")
+    pub timezone: TimezoneMode,
 
     /// Show sparkline trendlines in summary cards
     pub show_sparklines: bool,
@@ -198,6 +230,7 @@ impl Default for Config {
             reparse: false,
             budget: BudgetConfig::default(),
             tick_interval: 0,
+            timezone: TimezoneMode::Utc,
             show_sparklines: true,
             sparkline_metric: SparklineMetric::Tokens,
             today_bucket_mins: 10,

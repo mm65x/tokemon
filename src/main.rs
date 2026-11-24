@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Init => cmd_init(),
         Commands::Source { command } => cmd_source(command),
         Commands::Config => tui::run_config(&config, cli.offline || config.offline),
-        Commands::Statusline => cmd_statusline(&cli, &config),
+        Commands::Statusline { burn_rate } => cmd_statusline(&cli, &config, *burn_rate),
         Commands::Budget => cmd_budget(&cli, &config),
         Commands::Sessions { top } => cmd_sessions(&cli, &config, *top),
         Commands::Prune { before } => cmd_prune(*before),
@@ -333,13 +333,20 @@ fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
+fn cmd_statusline(cli: &Cli, config: &Config, show_burn_rate: bool) -> anyhow::Result<()> {
     let freq = cli.frequency(config);
     let since = frequency_since(freq, config.timezone);
     let effective_since = merge_since(cli.since, Some(since));
+    let load_since = if show_burn_rate {
+        effective_since
+            .and_then(|d| d.pred_opt())
+            .or(effective_since)
+    } else {
+        effective_since
+    };
     let entries = load_and_price(
         &pipeline::PipelineOptions {
-            since: effective_since,
+            since: load_since,
             ..pipeline::PipelineOptions::from_cli_config(cli, config)
         },
         true,
@@ -380,8 +387,20 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         None
     };
 
-    match budget_str {
-        Some(bs) => println!(
+    let burn_suffix = show_burn_rate
+        .then(|| pacemaker::format_burn_rate(&pacemaker::compute_burn_rate(&entries)));
+
+    match (budget_str, burn_suffix) {
+        (Some(bs), Some(br)) => println!(
+            "${:.2} | {} | {} | {} | {} | {}",
+            total_cost,
+            render::format_tokens_short(total_tokens),
+            format_provider_count(provider_count),
+            period_label,
+            bs,
+            br
+        ),
+        (Some(bs), None) => println!(
             "${:.2} | {} | {} | {} | {}",
             total_cost,
             render::format_tokens_short(total_tokens),
@@ -389,7 +408,17 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
             period_label,
             bs
         ),
-        None => render::print_statusline(total_cost, total_tokens, provider_count, period_label),
+        (None, Some(br)) => println!(
+            "{} | {} | {} | {} | {}",
+            render::format_cost(total_cost),
+            render::format_tokens_short(total_tokens),
+            format_provider_count(provider_count),
+            period_label,
+            br
+        ),
+        (None, None) => {
+            render::print_statusline(total_cost, total_tokens, provider_count, period_label);
+        }
     }
 
     Ok(())

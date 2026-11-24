@@ -149,7 +149,11 @@ pub enum Commands {
     /// Emit a versioned machine-readable status document
     Status,
     /// Compact one-line output for shell prompts and status bars
-    Statusline,
+    Statusline {
+        /// Include rolling 60-minute burn rate ($/hr and tok/min)
+        #[arg(long)]
+        burn_rate: bool,
+    },
     /// Show budget progress against configured limits
     Budget,
     /// List auto-detected providers on this machine

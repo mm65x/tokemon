@@ -1,8 +1,84 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 
 use crate::config::{BudgetConfig, TimezoneMode};
+use crate::render::format_tokens_short;
 use crate::timestamp;
 use crate::types::Record;
+
+/// Rolling window (in minutes) used for live burn-rate calculations.
+pub const BURN_RATE_WINDOW_MINUTES: i64 = 60;
+
+/// Rolling-window spending and token velocity.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[must_use]
+pub struct BurnRate {
+    pub tokens_per_min: f64,
+    pub cost_per_hour: f64,
+    pub window_tokens: u64,
+    pub window_cost: f64,
+}
+
+impl BurnRate {
+    /// Returns true when there is nonzero activity in the rolling window.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.window_tokens > 0 || self.window_cost > 0.0
+    }
+}
+
+/// Compute the live burn rate over the default rolling 60-minute window ending now.
+pub fn compute_burn_rate(entries: &[Record]) -> BurnRate {
+    compute_burn_rate_at(
+        entries,
+        Utc::now(),
+        Duration::minutes(BURN_RATE_WINDOW_MINUTES),
+    )
+}
+
+/// Compute the burn rate over `window` ending at `now`.
+pub fn compute_burn_rate_at(entries: &[Record], now: DateTime<Utc>, window: Duration) -> BurnRate {
+    let secs = window.num_seconds();
+    if secs <= 0 {
+        return BurnRate::default();
+    }
+    let start = now - window;
+    let mut window_tokens = 0u64;
+    let mut window_cost = 0.0f64;
+
+    for r in entries {
+        if r.timestamp >= start && r.timestamp <= now {
+            window_tokens = window_tokens.saturating_add(r.total_tokens());
+            window_cost += r.cost_usd.unwrap_or(0.0);
+        }
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    let hours = secs as f64 / 3600.0;
+    #[allow(clippy::cast_precision_loss)]
+    let mins = secs as f64 / 60.0;
+    #[allow(clippy::cast_precision_loss)]
+    let tokens_per_min = window_tokens as f64 / mins;
+    let cost_per_hour = window_cost / hours;
+
+    BurnRate {
+        tokens_per_min,
+        cost_per_hour,
+        window_tokens,
+        window_cost,
+    }
+}
+
+/// Format a [`BurnRate`] concisely for headers and status lines (e.g. `$1.42/hr · 14.5k/m`).
+#[must_use]
+pub fn format_burn_rate(rate: &BurnRate) -> String {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let rounded_tpm = rate.tokens_per_min.max(0.0).round() as u64;
+    format!(
+        "${:.2}/hr · {}/m",
+        rate.cost_per_hour,
+        format_tokens_short(rounded_tpm)
+    )
+}
 
 /// Spending versus limit for a single budget period.
 #[derive(Debug, Clone, Copy)]
@@ -139,5 +215,30 @@ mod tests {
             sum_cost_since(&entries, since_today, TimezoneMode::Utc),
             3.0
         );
+    }
+
+    #[test]
+    fn test_compute_burn_rate_filters_window_and_formats() {
+        let now = Utc::now();
+        let mut inside = create_dummy_record(2.5, 0);
+        inside.timestamp = now - Duration::minutes(15);
+        inside.input_tokens = 2400;
+        inside.output_tokens = 600;
+
+        let mut outside = create_dummy_record(9.0, 0);
+        outside.timestamp = now - Duration::minutes(90);
+        outside.input_tokens = 10_000;
+
+        let rate = compute_burn_rate_at(&[inside, outside], now, Duration::minutes(60));
+        assert!(rate.is_active());
+        assert_eq!(rate.window_tokens, 3000);
+        assert!((rate.window_cost - 2.5).abs() < 1e-9);
+        assert!((rate.cost_per_hour - 2.5).abs() < 1e-9);
+        assert!((rate.tokens_per_min - 50.0).abs() < 1e-9);
+        assert_eq!(format_burn_rate(&rate), "$2.50/hr · 50/m");
+
+        let inactive = compute_burn_rate_at(&[], now, Duration::minutes(60));
+        assert!(!inactive.is_active());
+        assert_eq!(format_burn_rate(&inactive), "$0.00/hr · 0/m");
     }
 }

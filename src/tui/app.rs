@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::render::{self, format_tokens_short};
 use crate::source::SourceSet;
 use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record, SessionSummary};
-use crate::{cache, cost, dedup, rollup};
+use crate::{cache, cost, dedup, pacemaker, rollup};
 
 use super::diff::{self, RowKey};
 use super::event::Event;
@@ -235,6 +235,8 @@ pub struct App {
     pub show_sessions: bool,
     /// Summary cards: Today, This Week, This Month, All Time.
     pub cards: [CardData; 4],
+    /// Rolling 60-minute burn rate.
+    pub burn_rate: pacemaker::BurnRate,
     /// Which summary cards are visible for this TUI session.
     pub card_visibility: SummaryCardVisibility,
     /// Detail table rows for the selected scope.
@@ -366,6 +368,7 @@ impl App {
                 },
             ],
             card_visibility: SummaryCardVisibility::default(),
+            burn_rate: pacemaker::BurnRate::default(),
             detail_models: Vec::new(),
             detail_total_cost: 0.0,
             detail_total_tokens: 0,
@@ -1264,6 +1267,8 @@ impl App {
         for card in &mut self.cards {
             card.trend = compute_trend(&card.sparkline);
         }
+
+        self.burn_rate = pacemaker::compute_burn_rate(&self.cached_records);
     }
 
     #[allow(clippy::too_many_lines)]

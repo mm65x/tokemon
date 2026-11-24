@@ -77,12 +77,6 @@ impl Scope {
         }
     }
 
-    /// Return the start date for this scope (UTC).
-    #[must_use]
-    pub fn since(self) -> NaiveDate {
-        self.since_in(crate::config::TimezoneMode::Utc)
-    }
-
     #[must_use]
     pub(crate) const fn card_index(self) -> usize {
         match self {
@@ -1073,13 +1067,14 @@ impl App {
         } else {
             self.pricing.as_ref()
         };
-        let records = match load_records_from_cache(pricing, &self.config.providers) {
-            Ok(records) => records,
-            Err(e) => {
-                self.set_warning(format!("Usage cache unavailable: {e}"));
-                return false;
-            }
-        };
+        let records =
+            match load_records_from_cache(pricing, &self.config.providers, self.config.timezone) {
+                Ok(records) => records,
+                Err(e) => {
+                    self.set_warning(format!("Usage cache unavailable: {e}"));
+                    return false;
+                }
+            };
         self.cached_records = records;
 
         // Snapshot cards before recomputing to detect card-only changes.
@@ -1448,12 +1443,13 @@ fn sort_models(models: &mut [ModelUsage], order: SortOrder) {
 fn load_records_from_cache(
     pricing: Option<&cost::PricingEngine>,
     providers: &[String],
+    tz: crate::config::TimezoneMode,
 ) -> crate::error::Result<Vec<Record>> {
     let c = cache::Cache::open_read_only_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
 
     // Load everything — the TUI filters in memory for card summaries.
     // We load the last ~60 days to keep things bounded.
-    let since = Scope::Month.since() - chrono::Duration::days(30);
+    let since = Scope::Month.since_in(tz) - chrono::Duration::days(30);
     let mut entries = c.load_entries_filtered(Some(since), None, providers)?;
 
     // Apply pricing from pre-loaded engine (no disk I/O here).

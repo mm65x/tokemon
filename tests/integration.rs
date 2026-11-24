@@ -981,12 +981,15 @@ fn timezone_local_config_works_end_to_end() {
     fs::write(claude_dir.join("session.jsonl"), format!("{line}\n")).unwrap();
 
     let bin = env!("CARGO_BIN_EXE_tokemon");
-    let out = Command::new(bin)
-        .args(["report", "--offline", "--no-cost", "--json"])
+    let mut cmd = Command::new(bin);
+    cmd.args(["report", "--offline", "--no-cost", "--json"])
         .env("TOKEMON_HOME", home)
-        .env("TZ", "Asia/Tokyo")
         .env_remove("TOKEMON_CACHE_DIR")
-        .env_remove("TOKEMON_CONFIG_DIR")
+        .env_remove("TOKEMON_CONFIG_DIR");
+    // Windows ignores POSIX TZ in chrono::Local (it reads the OS timezone).
+    #[cfg(unix)]
+    cmd.env("TZ", "Asia/Tokyo");
+    let out = cmd
         .output()
         .expect("run tokemon report with local timezone");
     assert!(
@@ -995,6 +998,18 @@ fn timezone_local_config_works_end_to_end() {
         String::from_utf8_lossy(&out.stderr)
     );
     let rep: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(rep["summaries"][0]["date"].as_str(), Some("2026-06-16"));
+    let expected_date = if cfg!(unix) {
+        "2026-06-16".to_string()
+    } else {
+        chrono::DateTime::parse_from_rfc3339("2026-06-15T23:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Local)
+            .date_naive()
+            .to_string()
+    };
+    assert_eq!(
+        rep["summaries"][0]["date"].as_str(),
+        Some(expected_date.as_str())
+    );
     assert_eq!(rep["total_tokens"].as_u64(), Some(150));
 }

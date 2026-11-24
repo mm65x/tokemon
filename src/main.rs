@@ -34,7 +34,7 @@ mod types;
 
 use cache::Cache;
 use cli::{Cli, Commands, Frequency, OutputFormat, SourceCommands};
-use config::Config;
+use config::{Config, TimezoneMode};
 use pipeline::load_and_price;
 use source::{Source, SourceSet};
 use types::{Report, SessionReport, StatusCapabilities, StatusReport, StatusScope};
@@ -139,11 +139,11 @@ fn cmd_source(command: &SourceCommands) -> anyhow::Result<()> {
 
 /// Compute the start date for a given frequency.
 #[must_use]
-fn frequency_since(freq: Frequency) -> NaiveDate {
+fn frequency_since(freq: Frequency, tz: TimezoneMode) -> NaiveDate {
     match freq {
-        Frequency::Daily => timestamp::start_of_today(),
-        Frequency::Weekly => timestamp::start_of_week(),
-        Frequency::Monthly => timestamp::start_of_month(),
+        Frequency::Daily => timestamp::today_in(tz),
+        Frequency::Weekly => timestamp::start_of_week_in(tz),
+        Frequency::Monthly => timestamp::start_of_month_in(tz),
     }
 }
 
@@ -235,9 +235,9 @@ fn cmd_report(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         .collect();
 
     let mut summaries = match freq {
-        Frequency::Weekly => rollup::aggregate_weekly(&entries),
-        Frequency::Monthly => rollup::aggregate_monthly(&entries),
-        Frequency::Daily => rollup::aggregate_daily(&entries),
+        Frequency::Weekly => rollup::aggregate_weekly_in(&entries, config.timezone),
+        Frequency::Monthly => rollup::aggregate_monthly_in(&entries, config.timezone),
+        Frequency::Daily => rollup::aggregate_daily_in(&entries, config.timezone),
     };
 
     if cli.is_desc(config) {
@@ -286,9 +286,9 @@ fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     )?;
 
     let mut summaries = match freq {
-        Frequency::Weekly => rollup::aggregate_weekly(&entries),
-        Frequency::Monthly => rollup::aggregate_monthly(&entries),
-        Frequency::Daily => rollup::aggregate_daily(&entries),
+        Frequency::Weekly => rollup::aggregate_weekly_in(&entries, config.timezone),
+        Frequency::Monthly => rollup::aggregate_monthly_in(&entries, config.timezone),
+        Frequency::Daily => rollup::aggregate_daily_in(&entries, config.timezone),
     };
     summaries.sort_unstable_by_key(|summary| summary.date);
 
@@ -335,7 +335,7 @@ fn cmd_status(cli: &Cli, config: &Config) -> anyhow::Result<()> {
 
 fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let freq = cli.frequency(config);
-    let since = frequency_since(freq);
+    let since = frequency_since(freq, config.timezone);
     let effective_since = merge_since(cli.since, Some(since));
     let entries = load_and_price(
         &pipeline::PipelineOptions {
@@ -354,7 +354,7 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
     let (total_cost, total_tokens) = entries
         .iter()
         .filter(|e| {
-            let d = e.timestamp.date_naive();
+            let d = timestamp::date_for(e.timestamp, config.timezone);
             effective_since.is_none_or(|s| d >= s) && cli.until.is_none_or(|u| d <= u)
         })
         .fold((0.0f64, 0u64), |(cost, tokens), e| {
@@ -368,7 +368,7 @@ fn cmd_statusline(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         || config.budget.weekly.is_some()
         || config.budget.monthly.is_some()
     {
-        let status = pacemaker::evaluate(&entries, &config.budget);
+        let status = pacemaker::evaluate_in(&entries, &config.budget, config.timezone);
         match freq {
             Frequency::Daily => status.daily.map(|b| format_budget_short(b.spent, b.limit)),
             Frequency::Weekly => status.weekly.map(|b| format_budget_short(b.spent, b.limit)),
@@ -400,7 +400,7 @@ fn cmd_budget(cli: &Cli, config: &Config) -> anyhow::Result<()> {
         &pipeline::PipelineOptions::from_cli_config(cli, config),
         false,
     )?;
-    let status = pacemaker::evaluate(&entries, &config.budget);
+    let status = pacemaker::evaluate_in(&entries, &config.budget, config.timezone);
     render::print_budget(&status);
     Ok(())
 }
@@ -427,7 +427,7 @@ fn cmd_sessions(cli: &Cli, config: &Config, top: usize) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut sessions = rollup::aggregate_by_session(&entries);
+    let mut sessions = rollup::aggregate_by_session_in(&entries, config.timezone);
     sessions.truncate(top);
 
     let total_cost: f64 = sessions.iter().map(|s| s.cost).sum();

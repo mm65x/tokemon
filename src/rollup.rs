@@ -2,22 +2,34 @@ use std::collections::{BTreeMap, HashMap};
 
 use chrono::{Datelike, NaiveDate};
 
+use crate::config::TimezoneMode;
 use crate::display;
+use crate::timestamp;
 use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record, SessionSummary};
 
-/// Group entries by date, then by model within each date
+/// Group entries by date in `Utc`, then by model within each date.
 pub fn aggregate_daily(entries: &[Record]) -> Vec<PeriodSummary> {
+    aggregate_daily_in(entries, TimezoneMode::Utc)
+}
+
+/// Group entries by date in `tz`, then by model within each date.
+pub fn aggregate_daily_in(entries: &[Record], tz: TimezoneMode) -> Vec<PeriodSummary> {
     let grouped = group_by_date(entries, |e| {
-        let date = e.timestamp.date_naive();
+        let date = timestamp::date_for(e.timestamp, tz);
         (date, date.format("%Y-%m-%d").to_string())
     });
     build_summaries(grouped)
 }
 
-/// Group entries by ISO week
+/// Group entries by ISO week in `Utc`.
 pub fn aggregate_weekly(entries: &[Record]) -> Vec<PeriodSummary> {
+    aggregate_weekly_in(entries, TimezoneMode::Utc)
+}
+
+/// Group entries by ISO week in `tz`.
+pub fn aggregate_weekly_in(entries: &[Record], tz: TimezoneMode) -> Vec<PeriodSummary> {
     let grouped = group_by_date(entries, |e| {
-        let date = e.timestamp.date_naive();
+        let date = timestamp::date_for(e.timestamp, tz);
         let iso = date.iso_week();
         let year = iso.year();
         let week = iso.week();
@@ -36,10 +48,15 @@ pub fn aggregate_weekly(entries: &[Record]) -> Vec<PeriodSummary> {
     build_summaries(grouped)
 }
 
-/// Group entries by month
+/// Group entries by month in `Utc`.
 pub fn aggregate_monthly(entries: &[Record]) -> Vec<PeriodSummary> {
+    aggregate_monthly_in(entries, TimezoneMode::Utc)
+}
+
+/// Group entries by month in `tz`.
+pub fn aggregate_monthly_in(entries: &[Record], tz: TimezoneMode) -> Vec<PeriodSummary> {
     let grouped = group_by_date(entries, |e| {
-        let date = e.timestamp.date_naive();
+        let date = timestamp::date_for(e.timestamp, tz);
         let first = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap_or(date);
         let label = date.format("%B %Y").to_string();
         (first, label)
@@ -47,23 +64,38 @@ pub fn aggregate_monthly(entries: &[Record]) -> Vec<PeriodSummary> {
     build_summaries(grouped)
 }
 
-/// Apply date range filter
+/// Apply date range filter in `Utc`.
 pub fn filter_by_date(
     entries: Vec<Record>,
     since: Option<NaiveDate>,
     until: Option<NaiveDate>,
 ) -> Vec<Record> {
+    filter_by_date_in(entries, since, until, TimezoneMode::Utc)
+}
+
+/// Apply date range filter in `tz`.
+pub fn filter_by_date_in(
+    entries: Vec<Record>,
+    since: Option<NaiveDate>,
+    until: Option<NaiveDate>,
+    tz: TimezoneMode,
+) -> Vec<Record> {
     entries
         .into_iter()
         .filter(|e| {
-            let date = e.timestamp.date_naive();
+            let date = timestamp::date_for(e.timestamp, tz);
             since.is_none_or(|s| date >= s) && until.is_none_or(|u| date <= u)
         })
         .collect()
 }
 
-/// Group entries by session_id, compute totals per session
+/// Group entries by session_id, compute totals per session in `Utc`.
 pub fn aggregate_by_session(entries: &[Record]) -> Vec<SessionSummary> {
+    aggregate_by_session_in(entries, TimezoneMode::Utc)
+}
+
+/// Group entries by session_id, compute totals per session in `tz`.
+pub fn aggregate_by_session_in(entries: &[Record], tz: TimezoneMode) -> Vec<SessionSummary> {
     let mut grouped: HashMap<&str, Vec<&Record>> = HashMap::new();
 
     for entry in entries {
@@ -111,7 +143,7 @@ pub fn aggregate_by_session(entries: &[Record]) -> Vec<SessionSummary> {
 
             SessionSummary {
                 session_id: sid.to_string(),
-                date: earliest.date_naive(),
+                date: timestamp::date_for(earliest, tz),
                 client: display::display_client(client).into_owned(),
                 dominant_model: display::display_model(dominant_model),
                 input_tokens: input,

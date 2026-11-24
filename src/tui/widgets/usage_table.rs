@@ -106,7 +106,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App) {
         }
     } else if app.show_history && !app.history_summaries.is_empty() {
         // History mode: show per-period summaries with sub-rows
-        let today = chrono::Utc::now().date_naive();
+        let today = crate::timestamp::today_in(app.config.timezone);
         for summary in &app.history_summaries {
             let is_current = match app.scope {
                 crate::tui::app::Scope::Today | crate::tui::app::Scope::Week => {

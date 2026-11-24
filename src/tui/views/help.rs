@@ -38,6 +38,7 @@ pub fn render(frame: &mut Frame) {
         ("← / →", "Cycle scope left/right"),
         ("g", "Cycle group-by (model/client/both)"),
         ("h", "Toggle historical periods"),
+        ("e", "Toggle sessions view"),
         ("c", "Open contribution heatmap"),
         ("v", "Open token spike chart"),
         ("s", "Cycle sort (cost/tokens/name/reqs)"),

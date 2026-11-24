@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 
 use crate::cache::{self, Cache};
 use crate::cli::Cli;
-use crate::config::Config;
+use crate::config::{Config, TimezoneMode};
 use crate::cost;
 use crate::dedup;
 use crate::error;
@@ -22,6 +22,7 @@ pub struct PipelineOptions {
     pub providers: Vec<String>,
     pub since: Option<NaiveDate>,
     pub until: Option<NaiveDate>,
+    pub timezone: TimezoneMode,
     pub no_cost: bool,
     pub offline: bool,
     pub refresh: bool,
@@ -47,6 +48,7 @@ impl PipelineOptions {
             },
             since: cli.since,
             until: cli.until,
+            timezone: config.timezone,
             no_cost: cli.no_cost || config.no_cost,
             offline: cli.offline || config.offline,
             refresh: cli.refresh || config.refresh,
@@ -115,7 +117,12 @@ fn parse_with_cache(
     let providers = resolve_source_refs(registry, &opts.providers)?;
 
     let Some(ref mut cache) = cache else {
-        return Ok(parse_all_directly(&providers, opts.since, opts.until));
+        return Ok(parse_all_directly(
+            &providers,
+            opts.since,
+            opts.until,
+            opts.timezone,
+        ));
     };
 
     // Rebuild cached records for any source whose parser output changed since
@@ -131,13 +138,27 @@ fn parse_with_cache(
 
     let has_filters = opts.since.is_some() || opts.until.is_some() || !opts.providers.is_empty();
 
+    // For Local timezone, widen the UTC SQLite query by ±1 day and apply exact
+    // local calendar-date filtering in Rust so UTC midnight boundaries match.
+    let (query_since, query_until) = match opts.timezone {
+        TimezoneMode::Utc => (opts.since, opts.until),
+        TimezoneMode::Local => (
+            opts.since.and_then(|d| d.pred_opt()),
+            opts.until.and_then(|d| d.succ_opt()),
+        ),
+    };
+
     // If cache is fresh and no --refresh/--reparse flag, skip discovery entirely
     if !opts.refresh && !opts.reparse && !cache.should_rediscover(REDISCOVERY_INTERVAL_SECS) {
         let mut entries = if has_filters {
-            cache.load_entries_filtered(opts.since, opts.until, &opts.providers)?
+            cache.load_entries_filtered(query_since, query_until, &opts.providers)?
         } else {
             cache.load_all_entries()?
         };
+        if opts.timezone == TimezoneMode::Local && (opts.since.is_some() || opts.until.is_some()) {
+            entries =
+                crate::rollup::filter_by_date_in(entries, opts.since, opts.until, opts.timezone);
+        }
         // Dedup is handled inside load_all_entries / load_entries_filtered.
         entries.sort_by_key(|e| e.timestamp);
         return Ok(entries);
@@ -239,16 +260,24 @@ fn parse_with_cache(
     }
 
     let mut entries = if has_filters {
-        cache.load_entries_filtered(opts.since, opts.until, &opts.providers)?
+        cache.load_entries_filtered(query_since, query_until, &opts.providers)?
     } else {
         cache.load_all_entries()?
     };
 
     if !parsed_fallback.is_empty() {
-        let filtered_fallback =
-            crate::rollup::filter_by_date(parsed_fallback, opts.since, opts.until);
+        let filtered_fallback = crate::rollup::filter_by_date_in(
+            parsed_fallback,
+            opts.since,
+            opts.until,
+            opts.timezone,
+        );
         entries.extend(filtered_fallback);
         entries = dedup::deduplicate(entries);
+    }
+
+    if opts.timezone == TimezoneMode::Local && (opts.since.is_some() || opts.until.is_some()) {
+        entries = crate::rollup::filter_by_date_in(entries, opts.since, opts.until, opts.timezone);
     }
 
     // Dedup is handled inside load_all_entries / load_entries_filtered.
@@ -278,6 +307,7 @@ fn parse_all_directly(
     providers: &[&dyn source::Source],
     since: Option<NaiveDate>,
     until: Option<NaiveDate>,
+    tz: TimezoneMode,
 ) -> Vec<types::Record> {
     let mut entries = Vec::new();
     for provider in providers {
@@ -286,7 +316,8 @@ fn parse_all_directly(
             Err(e) => eprintln!("[tokemon] Warning: {}: {}", provider.name(), e),
         }
     }
-    let mut entries = dedup::deduplicate(crate::rollup::filter_by_date(entries, since, until));
+    let mut entries =
+        dedup::deduplicate(crate::rollup::filter_by_date_in(entries, since, until, tz));
     entries.sort_by_key(|e| e.timestamp);
     entries
 }

@@ -9,7 +9,7 @@ use ratatui::layout::Rect;
 use crate::config::Config;
 use crate::render::{self, format_tokens_short};
 use crate::source::SourceSet;
-use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record};
+use crate::types::{GroupBy, ModelUsage, PeriodSummary, Record, SessionSummary};
 use crate::{cache, cost, dedup, pacemaker, rollup};
 
 use super::diff::{self, RowKey};
@@ -66,13 +66,13 @@ impl Scope {
         }
     }
 
-    /// Return the start date for this scope.
+    /// Return the start date for this scope in `tz`.
     #[must_use]
-    pub fn since(self) -> NaiveDate {
+    pub fn since_in(self, tz: crate::config::TimezoneMode) -> NaiveDate {
         match self {
-            Self::Today => timestamp::start_of_today(),
-            Self::Week => timestamp::start_of_week(),
-            Self::Month => timestamp::start_of_month(),
+            Self::Today => timestamp::today_in(tz),
+            Self::Week => timestamp::start_of_week_in(tz),
+            Self::Month => timestamp::start_of_month_in(tz),
             Self::AllTime => NaiveDate::from_ymd_opt(2000, 1, 1).unwrap(),
         }
     }
@@ -231,6 +231,8 @@ pub struct App {
     pub group_by: GroupBy,
     /// Whether history mode is toggled on.
     pub show_history: bool,
+    /// Whether sessions mode is toggled on.
+    pub show_sessions: bool,
     /// Summary cards: Today, This Week, This Month, All Time.
     pub cards: [CardData; 4],
     /// Rolling 60-minute burn rate.
@@ -250,6 +252,8 @@ pub struct App {
     pub detail_total_thinking: u64,
     /// Historical summaries (populated when `show_history` is true).
     pub history_summaries: Vec<PeriodSummary>,
+    /// Session summaries (populated when `show_sessions` is true).
+    pub detail_sessions: Vec<SessionSummary>,
     /// Scroll offset for the detail table.
     pub scroll_offset: u16,
     /// Whether the app should quit.
@@ -332,6 +336,7 @@ impl App {
             scope: initial_scope,
             group_by: GroupBy::ModelClient,
             show_history: false,
+            show_sessions: false,
             cards: [
                 CardData {
                     label: "Today",
@@ -374,6 +379,7 @@ impl App {
             detail_total_cache_write: 0,
             detail_total_thinking: 0,
             history_summaries: Vec::new(),
+            detail_sessions: Vec::new(),
             scroll_offset: 0,
             should_quit: false,
             show_help: false,
@@ -700,6 +706,19 @@ impl App {
             }
             KeyCode::Char('h') => {
                 self.show_history = !self.show_history;
+                if self.show_history {
+                    self.show_sessions = false;
+                }
+                self.scroll_offset = 0;
+                self.recompute_detail();
+                true
+            }
+            KeyCode::Char('e') => {
+                self.show_sessions = !self.show_sessions;
+                if self.show_sessions {
+                    self.show_history = false;
+                }
+                self.scroll_offset = 0;
                 self.recompute_detail();
                 true
             }
@@ -939,7 +958,8 @@ impl App {
     /// and compute base totals and weekly sparkline for the All Time card.
     /// Called once at startup.
     fn compute_all_time_base(&mut self) -> crate::error::Result<()> {
-        let cutoff = Scope::Month.since() - Duration::days(30);
+        let tz = self.config.timezone;
+        let cutoff = Scope::Month.since_in(tz) - Duration::days(30);
         let Some(cutoff_pred) = cutoff.pred_opt() else {
             return Ok(());
         };
@@ -978,9 +998,9 @@ impl App {
 
         // Aggregate into model-level breakdown for the detail table, plus weekly
         // summaries so History mode under All Time includes older periods.
-        let summaries = rollup::aggregate_daily(&historical);
+        let summaries = rollup::aggregate_daily_in(&historical, tz);
         let all_time_base_models = aggregate_summaries_to_models(&summaries, self.group_by);
-        let all_time_base_weekly = rollup::aggregate_weekly(&historical);
+        let all_time_base_weekly = rollup::aggregate_weekly_in(&historical, tz);
 
         self.all_time_base_cost = all_time_base_cost;
         self.all_time_base_tokens = all_time_base_tokens;
@@ -1069,13 +1089,14 @@ impl App {
         } else {
             self.pricing.as_ref()
         };
-        let records = match load_records_from_cache(pricing, &self.config.providers) {
-            Ok(records) => records,
-            Err(e) => {
-                self.set_warning(format!("Usage cache unavailable: {e}"));
-                return false;
-            }
-        };
+        let records =
+            match load_records_from_cache(pricing, &self.config.providers, self.config.timezone) {
+                Ok(records) => records,
+                Err(e) => {
+                    self.set_warning(format!("Usage cache unavailable: {e}"));
+                    return false;
+                }
+            };
         self.cached_records = records;
 
         // Snapshot cards before recomputing to detect card-only changes.
@@ -1156,29 +1177,32 @@ impl App {
         table_row_count(
             &self.detail_models,
             &self.history_summaries,
+            &self.detail_sessions,
             self.show_history,
+            self.show_sessions,
         )
     }
 
     fn recompute_cards(&mut self) {
-        let today = Utc::now().date_naive();
+        let tz = self.config.timezone;
+        let today = timestamp::today_in(tz);
         let use_cost = self.config.sparkline_metric == crate::config::SparklineMetric::Cost;
 
         // Today card
         let today_records: Vec<&Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() == today)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) == today)
             .collect();
         self.cards[0].cost = sum_cost(&today_records);
         self.cards[0].tokens = sum_tokens(&today_records);
 
         // This week card
-        let week_start = Scope::Week.since();
+        let week_start = Scope::Week.since_in(tz);
         let week_records: Vec<&Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() >= week_start)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) >= week_start)
             .collect();
         self.cards[1].cost = sum_cost(&week_records);
         self.cards[1].tokens = sum_tokens(&week_records);
@@ -1194,11 +1218,11 @@ impl App {
         );
 
         // This month card
-        let month_start = Scope::Month.since();
+        let month_start = Scope::Month.since_in(tz);
         let month_records: Vec<&Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() >= month_start)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) >= month_start)
             .collect();
         self.cards[2].cost = sum_cost(&month_records);
         self.cards[2].tokens = sum_tokens(&month_records);
@@ -1258,16 +1282,17 @@ impl App {
     }
 
     fn recompute_detail(&mut self) {
-        let since = self.scope.since();
+        let tz = self.config.timezone;
+        let since = self.scope.since_in(tz);
         let filtered: Vec<Record> = self
             .cached_records
             .iter()
-            .filter(|r| r.timestamp.date_naive() >= since)
+            .filter(|r| timestamp::date_for(r.timestamp, tz) >= since)
             .cloned()
             .collect();
 
         // Aggregate into model-level breakdown for the selected scope
-        let summaries = rollup::aggregate_daily(&filtered);
+        let summaries = rollup::aggregate_daily_in(&filtered, tz);
         let window_models = aggregate_summaries_to_models(&summaries, self.group_by);
 
         // For All Time, merge historical base models with current window.
@@ -1304,10 +1329,10 @@ impl App {
         // Historical summaries for the history view
         if self.show_history {
             self.history_summaries = match self.scope {
-                Scope::Today | Scope::Week => rollup::aggregate_daily(&filtered),
-                Scope::Month => rollup::aggregate_weekly(&filtered),
+                Scope::Today | Scope::Week => rollup::aggregate_daily_in(&filtered, tz),
+                Scope::Month => rollup::aggregate_weekly_in(&filtered, tz),
                 Scope::AllTime => {
-                    let window_weekly = rollup::aggregate_weekly(&filtered);
+                    let window_weekly = rollup::aggregate_weekly_in(&filtered, tz);
                     merge_period_summaries(&self.all_time_base_weekly, &window_weekly)
                 }
             };
@@ -1333,6 +1358,26 @@ impl App {
                 .sort_by_key(|summary| std::cmp::Reverse(summary.date));
         } else {
             self.history_summaries.clear();
+        }
+
+        if self.show_sessions {
+            let mut sessions = rollup::aggregate_by_session_in(&filtered, tz);
+            if let Some(ref fl) = filter_lower {
+                sessions.retain(|s| matches_session_filter(s, fl));
+            }
+            sort_sessions(&mut sessions, self.sort_order);
+
+            self.detail_total_cost = sessions.iter().map(|s| s.cost).sum();
+            self.detail_total_tokens = sessions.iter().map(|s| s.total_tokens).sum();
+            self.detail_total_requests = 0;
+            self.detail_total_input = sessions.iter().map(|s| s.input_tokens).sum();
+            self.detail_total_output = sessions.iter().map(|s| s.output_tokens).sum();
+            self.detail_total_cache_read = sessions.iter().map(|s| s.cache_read_tokens).sum();
+            self.detail_total_cache_write = sessions.iter().map(|s| s.cache_creation_tokens).sum();
+            self.detail_total_thinking = sessions.iter().map(|s| s.thinking_tokens).sum();
+            self.detail_sessions = sessions;
+        } else {
+            self.detail_sessions.clear();
         }
     }
 
@@ -1383,6 +1428,49 @@ fn matches_model_filter(m: &ModelUsage, filter_lower: &str) -> bool {
         || crate::display::infer_api_provider(m.effective_raw_model())
             .to_lowercase()
             .contains(filter_lower)
+}
+
+fn matches_session_filter(s: &SessionSummary, filter_lower: &str) -> bool {
+    s.session_id.to_lowercase().contains(filter_lower)
+        || s.client.to_lowercase().contains(filter_lower)
+        || crate::display::display_client(&s.client)
+            .to_lowercase()
+            .contains(filter_lower)
+        || s.dominant_model.to_lowercase().contains(filter_lower)
+        || crate::display::display_model(&s.dominant_model)
+            .to_lowercase()
+            .contains(filter_lower)
+}
+
+fn sort_sessions(sessions: &mut [SessionSummary], order: SortOrder) {
+    match order {
+        SortOrder::CostDesc => {
+            sessions.sort_by(|a, b| {
+                b.cost
+                    .total_cmp(&a.cost)
+                    .then_with(|| b.total_tokens.cmp(&a.total_tokens))
+                    .then_with(|| a.session_id.cmp(&b.session_id))
+            });
+        }
+        SortOrder::TokensDesc => {
+            sessions.sort_by(|a, b| {
+                b.total_tokens
+                    .cmp(&a.total_tokens)
+                    .then_with(|| a.session_id.cmp(&b.session_id))
+            });
+        }
+        SortOrder::NameAsc => {
+            sessions.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+        }
+        SortOrder::RequestsDesc => {
+            sessions.sort_by(|a, b| {
+                b.date
+                    .cmp(&a.date)
+                    .then_with(|| b.cost.total_cmp(&a.cost))
+                    .then_with(|| a.session_id.cmp(&b.session_id))
+            });
+        }
+    }
 }
 
 fn recompute_summary_totals(summary: &mut PeriodSummary) {
@@ -1444,12 +1532,13 @@ fn sort_models(models: &mut [ModelUsage], order: SortOrder) {
 fn load_records_from_cache(
     pricing: Option<&cost::PricingEngine>,
     providers: &[String],
+    tz: crate::config::TimezoneMode,
 ) -> crate::error::Result<Vec<Record>> {
     let c = cache::Cache::open_read_only_with_busy_timeout(TUI_CACHE_BUSY_TIMEOUT)?;
 
     // Load everything — the TUI filters in memory for card summaries.
     // We load the last ~60 days to keep things bounded.
-    let since = Scope::Month.since() - chrono::Duration::days(30);
+    let since = Scope::Month.since_in(tz) - chrono::Duration::days(30);
     let mut entries = c.load_entries_filtered(Some(since), None, providers)?;
 
     // Apply pricing from pre-loaded engine (no disk I/O here).
@@ -1465,9 +1554,13 @@ fn load_records_from_cache(
 fn table_row_count(
     detail_models: &[ModelUsage],
     history_summaries: &[PeriodSummary],
+    detail_sessions: &[SessionSummary],
     show_history: bool,
+    show_sessions: bool,
 ) -> usize {
-    let data_rows = if show_history && !history_summaries.is_empty() {
+    let data_rows = if show_sessions && !detail_sessions.is_empty() {
+        detail_sessions.len()
+    } else if show_history && !history_summaries.is_empty() {
         history_summaries
             .iter()
             .map(|summary| 1usize.saturating_add(summary.models.len()))
@@ -1498,14 +1591,54 @@ mod tests {
     #[test]
     fn table_row_count_includes_history_headers_models_and_total() {
         let history = vec![summary(2), summary(3)];
-        assert_eq!(table_row_count(&[], &history, true), 8);
+        assert_eq!(table_row_count(&[], &history, &[], true, false), 8);
     }
 
     #[test]
     fn table_row_count_uses_detail_rows_outside_history_mode() {
         let details = vec![ModelUsage::default(); 4];
         let history = vec![summary(2)];
-        assert_eq!(table_row_count(&details, &history, false), 5);
+        assert_eq!(table_row_count(&details, &history, &[], false, false), 5);
+    }
+
+    #[test]
+    fn table_row_count_uses_session_rows_in_sessions_mode() {
+        let details = vec![ModelUsage::default(); 4];
+        let sessions = vec![
+            SessionSummary {
+                session_id: "s1".to_string(),
+                date: NaiveDate::from_ymd_opt(2026, 6, 1).expect("valid date"),
+                client: "claude-code".to_string(),
+                dominant_model: "claude-sonnet-4-6".to_string(),
+                input_tokens: 10,
+                output_tokens: 5,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                thinking_tokens: 0,
+                total_tokens: 15,
+                cost: 0.01,
+            },
+            SessionSummary {
+                session_id: "s2".to_string(),
+                date: NaiveDate::from_ymd_opt(2026, 6, 2).expect("valid date"),
+                client: "codex".to_string(),
+                dominant_model: "gpt-5".to_string(),
+                input_tokens: 20,
+                output_tokens: 10,
+                cache_read_tokens: 0,
+                cache_creation_tokens: 0,
+                thinking_tokens: 0,
+                total_tokens: 30,
+                cost: 0.02,
+            },
+        ];
+        assert_eq!(table_row_count(&details, &[], &sessions, false, true), 3);
+
+        let mut sorted = sessions;
+        sort_sessions(&mut sorted, SortOrder::CostDesc);
+        assert_eq!(sorted[0].session_id, "s2");
+        assert!(matches_session_filter(&sorted[0], "codex"));
+        assert!(!matches_session_filter(&sorted[0], "claude"));
     }
 
     #[test]

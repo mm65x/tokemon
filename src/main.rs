@@ -337,9 +337,16 @@ fn cmd_statusline(cli: &Cli, config: &Config, show_burn_rate: bool) -> anyhow::R
     let freq = cli.frequency(config);
     let since = frequency_since(freq);
     let effective_since = merge_since(cli.since, Some(since));
+    let load_since = if show_burn_rate {
+        effective_since
+            .and_then(|d| d.pred_opt())
+            .or(effective_since)
+    } else {
+        effective_since
+    };
     let entries = load_and_price(
         &pipeline::PipelineOptions {
-            since: effective_since,
+            since: load_since,
             ..pipeline::PipelineOptions::from_cli_config(cli, config)
         },
         true,
